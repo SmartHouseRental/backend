@@ -1,8 +1,8 @@
 name: Backend AI Review (Gemini + Telegram)
 
 on:
-  pull_request:
-    types: [opened, synchronize]
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
@@ -11,30 +11,53 @@ permissions:
 
 jobs:
   review:
+    if: github.event.issue.pull_request && contains(toLower(github.event.comment.body), '/gemini review')
     runs-on: ubuntu-latest
 
     steps:
       # Step 1: Checkout Repository
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ github.event.issue.number }}/head
+          fetch-depth: 0
 
       # Step 2: Get PR metadata
       - name: Get PR Metadata
         id: prinfo
-        run: |
-          echo "title=${{ github.event.pull_request.title }}" >> $GITHUB_OUTPUT
-          echo "url=${{ github.event.pull_request.html_url }}" >> $GITHUB_OUTPUT
-          echo "author=${{ github.event.pull_request.user.login }}" >> $GITHUB_OUTPUT
-          echo "branch=${{ github.head_ref }}" >> $GITHUB_OUTPUT
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pull_number = context.payload.issue.number;
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number,
+            });
+
+            core.setOutput('number', String(pr.number));
+            core.setOutput('title', pr.title);
+            core.setOutput('url', pr.html_url);
+            core.setOutput('author', pr.user?.login ?? 'unknown');
+            core.setOutput('branch', pr.head?.ref ?? 'unknown');
+            core.setOutput('base', pr.base?.ref ?? 'main');
 
       # Step 3: Fetch PR diff
       - name: Fetch PR Diff
         run: |
-          curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-          "${{ github.event.pull_request.diff_url }}" \
-          -o pr.diff
+          git fetch origin "${{ steps.prinfo.outputs.base }}"
+          git diff "origin/${{ steps.prinfo.outputs.base }}"...HEAD -- \
+            '*.ts' '*.js' '*.json' '*.prisma' > pr_filtered.diff
+
+          if [ ! -s pr_filtered.diff ]; then
+            echo "No matching backend file changes found." > pr_filtered.diff
+          fi
+
           # Limit diff size for Gemini token safety (approx 15k chars)
-          head -c 15000 pr.diff > pr_limited.diff
+          head -c 15000 pr_filtered.diff > pr_limited.diff
+          # Redact sensitive info
+          sed -i 's/API_KEY=.*/API_KEY=REDACTED/g' pr_limited.diff
 
       # Step 4: Install jq
       - name: Install jq
@@ -44,66 +67,96 @@ jobs:
       - name: Send Diff to Gemini
         id: gemini
         run: |
-          PROMPT="You are a senior backend architect reviewing a Node.js + Express + Prisma + TypeScript backend.
-          
-          Focus on:
-          - SECURITY: JWT misuse, Missing auth middleware, Prisma injection, validation, rate limiting, env exposure.
-          - PERFORMANCE: N+1 queries, blocking sync code, Redis misuse.
-          - ARCHITECTURE: Controller/service separation, AppError usage, logging, middleware order.
-          - CODE QUALITY: Type safety, Async/await mistakes, unhandled rejections.
+          PROMPT="You are a strict senior backend engineer reviewing a production Node.js API.
 
-          Return your response in this structure:
-          CRITICAL ISSUES:
-          IMPROVEMENTS:
-          GOOD PRACTICES:
-          OVERALL RISK LEVEL: Low / Medium / High"
+Rules:
+- Be concise and specific.
+- Only mention REAL issues (no generic advice).
+- Reference code patterns from the diff.
+- Prioritize critical bugs first.
+
+Focus on:
+1. SECURITY (auth bypass, injection, secrets, validation)
+2. PERFORMANCE (N+1 queries, blocking code)
+3. ARCHITECTURE (layer separation, middleware usage)
+4. RELIABILITY (error handling, async issues)
+
+Output format:
+
+## 🚨 CRITICAL ISSUES
+- ...
+## ⚠️ IMPROVEMENTS
+- ...
+## ✅ GOOD PRACTICES
+- ...
+## 📊 OVERALL RISK
+Low | Medium | High"
 
           DIFF_CONTENT=$(cat pr_limited.diff)
 
-          RESPONSE=$(curl -s -X POST \
+          HTTP_STATUS=$(curl -s -o response.json -w "%{http_code}" -X POST \
             -H "Content-Type: application/json" \
-            "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${{ secrets.GEMINI_API_KEY }}" \
-            -d "$(jq -n \
-              --arg prompt "$PROMPT\n\nHere is the PR diff:\n$DIFF_CONTENT" \
-              '{contents:[{parts:[{text:$prompt}]}]}')")
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${{ secrets.GEMINI_API_KEY }}" \
+            -d "$(jq -n --arg prompt "$PROMPT\n\nHere is the PR diff:\n$DIFF_CONTENT" '{contents:[{parts:[{text:$prompt}]}]}')" || echo "000")
 
-          echo "$RESPONSE" > response.json
-          
-          # Extract text using jq
-          COMMENT=$(jq -r '.candidates[0].content.parts[0].text' response.json)
+          if jq -e . response.json >/dev/null 2>&1; then
+            COMMENT=$(jq -r '.candidates[0].content.parts[0].text // "Gemini failed to generate a response."' response.json 2>/dev/null || true)
+          else
+            COMMENT=""
+          fi
 
-          # Use heredoc for multi-line output to GITHUB_OUTPUT
+          if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ] || [ -z "$COMMENT" ] || [ "$COMMENT" = "null" ]; then
+            COMMENT="Gemini API failed or returned empty response."
+          fi
+
           echo "comment<<EOF" >> $GITHUB_OUTPUT
           echo "$COMMENT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      # Step 6: Post comment on PR
-      - name: Post Comment on PR
+      - name: Find Existing AI Review Comment
+        id: existing_comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const marker = '🤖 **AI Backend Review**';
+            const issue_number = context.payload.issue.number;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              per_page: 100,
+            });
+            const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+            core.setOutput('comment_id', existing ? String(existing.id) : '');
+
+      - name: Create or Update PR Review Comment
         uses: peter-evans/create-or-update-comment@v4
         with:
-          issue-number: ${{ github.event.pull_request.number }}
+          issue-number: ${{ steps.prinfo.outputs.number }}
+          comment-id: ${{ steps.existing_comment.outputs.comment_id }}
           body: |
             🤖 **AI Backend Review**
 
             ${{ steps.gemini.outputs.comment }}
+          edit-mode: replace
 
-      # Step 7: Send Telegram Notification
       - name: Send Notification to Telegram
         run: |
-          # Truncate summary for Telegram message limits (4096 chars)
-          SUMMARY=$(echo "${{ steps.gemini.outputs.comment }}" | head -c 3500)
+          SUMMARY=$(printf "%s" "${{ steps.gemini.outputs.comment }}" | cut -c1-3500)
 
           curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
           -H "Content-Type: application/json" \
           -d "$(jq -n \
-            --arg text "*New Backend PR Review*
-          **Title:** ${{ steps.prinfo.outputs.title }}
-          **Author:** ${{ steps.prinfo.outputs.author }}
-          **Branch:** ${{ steps.prinfo.outputs.branch }}
+            --arg text "🚀 New Backend PR Review
 
-          **Review Summary:**
-          $SUMMARY
+Title: ${{ steps.prinfo.outputs.title }}
+Author: ${{ steps.prinfo.outputs.author }}
+Branch: ${{ steps.prinfo.outputs.branch }}
 
-          🔗 [View PR](${{ steps.prinfo.outputs.url }})" \
+Review Summary:
+$SUMMARY
+
+View PR: ${{ steps.prinfo.outputs.url }}" \
             --arg chat_id "${{ secrets.TELEGRAM_CHAT_ID }}" \
-            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown"}')"
+            '{chat_id: $chat_id, text: $text}')"

@@ -37,7 +37,7 @@ app.use(cookieParser());
 app.use(morgan('dev'));
 app.use(rateLimiter);
 
-// Swagger Documentation
+// Swagger api Documentation
 app.get('/swagger.json', (req, res) => {
   res.json(swaggerSpec);
 });
