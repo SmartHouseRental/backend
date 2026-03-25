@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   review:
-    if: github.event.issue.pull_request && github.event.comment.body == '/gemini review'
+    if: github.event.issue.pull_request && contains(toLower(github.event.comment.body), '/gemini review')
     runs-on: ubuntu-latest
 
     steps:
@@ -19,7 +19,6 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          # Checkout PR head commit for reliable access across same-repo and fork PRs.
           ref: refs/pull/${{ github.event.issue.number }}/head
           fetch-depth: 0
 
@@ -52,12 +51,12 @@ jobs:
             '*.ts' '*.js' '*.json' '*.prisma' > pr_filtered.diff
 
           if [ ! -s pr_filtered.diff ]; then
-            echo "No matching backend file changes were found in this PR." > pr_filtered.diff
+            echo "No matching backend file changes found." > pr_filtered.diff
           fi
 
           # Limit diff size for Gemini token safety (approx 15k chars)
           head -c 15000 pr_filtered.diff > pr_limited.diff
-          # Basic safety redaction before sending to external AI service
+          # Redact sensitive info
           sed -i 's/API_KEY=.*/API_KEY=REDACTED/g' pr_limited.diff
 
       # Step 4: Install jq
@@ -84,6 +83,13 @@ Focus on:
 
 Output format:
 
+## 🚨 CRITICAL ISSUES
+- ...
+## ⚠️ IMPROVEMENTS
+- ...
+## ✅ GOOD PRACTICES
+- ...
+## 📊 OVERALL RISK
 Low | Medium | High"
 
           DIFF_CONTENT=$(cat pr_limited.diff)
@@ -91,9 +97,7 @@ Low | Medium | High"
           HTTP_STATUS=$(curl -s -o response.json -w "%{http_code}" -X POST \
             -H "Content-Type: application/json" \
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${{ secrets.GEMINI_API_KEY }}" \
-            -d "$(jq -n \
-              --arg prompt "$PROMPT\n\nHere is the PR diff:\n$DIFF_CONTENT" \
-              '{contents:[{parts:[{text:$prompt}]}]}')" || echo "000")
+            -d "$(jq -n --arg prompt "$PROMPT\n\nHere is the PR diff:\n$DIFF_CONTENT" '{contents:[{parts:[{text:$prompt}]}]}')" || echo "000")
 
           if jq -e . response.json >/dev/null 2>&1; then
             COMMENT=$(jq -r '.candidates[0].content.parts[0].text // "Gemini failed to generate a response."' response.json 2>/dev/null || true)
@@ -123,27 +127,13 @@ Low | Medium | High"
               issue_number,
               per_page: 100,
             });
-
-            const existing = comments.find(
-              (c) => c.user?.type === 'Bot' && c.body?.includes(marker)
-            );
-
+            const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
             core.setOutput('comment_id', existing ? String(existing.id) : '');
 
-      - name: Create PR Review Comment
-        if: steps.existing_comment.outputs.comment_id == ''
+      - name: Create or Update PR Review Comment
         uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ steps.prinfo.outputs.number }}
-          body: |
-            🤖 **AI Backend Review**
-
-            ${{ steps.gemini.outputs.comment }}
-
-      - name: Update Existing PR Review Comment
-        if: steps.existing_comment.outputs.comment_id != ''
-        uses: peter-evans/create-or-update-comment@v4
-        with:
           comment-id: ${{ steps.existing_comment.outputs.comment_id }}
           body: |
             🤖 **AI Backend Review**
@@ -153,20 +143,20 @@ Low | Medium | High"
 
       - name: Send Notification to Telegram
         run: |
-          SUMMARY=$(echo "${{ steps.gemini.outputs.comment }}" | head -c 3500)
+          SUMMARY=$(printf "%s" "${{ steps.gemini.outputs.comment }}" | cut -c1-3500)
 
           curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
           -H "Content-Type: application/json" \
           -d "$(jq -n \
             --arg text "🚀 New Backend PR Review
 
-          Title: ${{ steps.prinfo.outputs.title }}
-          Author: ${{ steps.prinfo.outputs.author }}
-          Branch: ${{ steps.prinfo.outputs.branch }}
+Title: ${{ steps.prinfo.outputs.title }}
+Author: ${{ steps.prinfo.outputs.author }}
+Branch: ${{ steps.prinfo.outputs.branch }}
 
-          Review Summary:
-          $SUMMARY
+Review Summary:
+$SUMMARY
 
-          View PR: ${{ steps.prinfo.outputs.url }}" \
+View PR: ${{ steps.prinfo.outputs.url }}" \
             --arg chat_id "${{ secrets.TELEGRAM_CHAT_ID }}" \
             '{chat_id: $chat_id, text: $text}')"
