@@ -84,16 +84,6 @@ Focus on:
 
 Output format:
 
-## 🚨 CRITICAL ISSUES
-- ...
-
-## ⚠️ IMPROVEMENTS
-- ...
-
-## ✅ GOOD PRACTICES
-- ...
-
-## 📊 OVERALL RISK
 Low | Medium | High"
 
           DIFF_CONTENT=$(cat pr_limited.diff)
@@ -105,7 +95,6 @@ Low | Medium | High"
               --arg prompt "$PROMPT\n\nHere is the PR diff:\n$DIFF_CONTENT" \
               '{contents:[{parts:[{text:$prompt}]}]}')" || echo "000")
 
-          # Extract text safely even when the response shape is unexpected.
           if jq -e . response.json >/dev/null 2>&1; then
             COMMENT=$(jq -r '.candidates[0].content.parts[0].text // "Gemini failed to generate a response."' response.json 2>/dev/null || true)
           else
@@ -116,12 +105,10 @@ Low | Medium | High"
             COMMENT="Gemini API failed or returned empty response."
           fi
 
-          # Use heredoc for multi-line output to GITHUB_OUTPUT
           echo "comment<<EOF" >> $GITHUB_OUTPUT
           echo "$COMMENT" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      # Step 6: Post comment on PR
       - name: Find Existing AI Review Comment
         id: existing_comment
         uses: actions/github-script@v7
@@ -164,10 +151,8 @@ Low | Medium | High"
             ${{ steps.gemini.outputs.comment }}
           edit-mode: replace
 
-      # Step 7: Send Telegram Notification
       - name: Send Notification to Telegram
         run: |
-          # Truncate summary for Telegram message limits (4096 chars)
           SUMMARY=$(echo "${{ steps.gemini.outputs.comment }}" | head -c 3500)
 
           curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
