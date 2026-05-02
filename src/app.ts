@@ -9,8 +9,8 @@ import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
 import { errorHandler } from './middlewares/error.middleware';
 import { rateLimiter } from './middlewares/rateLimiter';
-
-// Routes
+import ownerRoutes from './modules/owner/routes';
+import supportRoutes from './modules/support/routes';
 import apiRoutes from './routes';
 
 const app = express();
@@ -58,6 +58,7 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 app.use(cookieParser());
 app.use(morgan('dev'));
 app.use(rateLimiter);
+app.use('/api/v1/owner', ownerRoutes);
 
 // Swagger Documentation
 app.get('/swagger.json', (req, res) => {
@@ -84,5 +85,7 @@ app.use('/api/v1', apiRoutes);
 
 // Global Error Handler
 app.use(errorHandler);
+
+app.use('/api/v1/support', supportRoutes);
 
 export default app;

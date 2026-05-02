@@ -2,8 +2,11 @@ import { z } from 'zod';
 
 export const updateProfileSchema = z.object({
   body: z.object({
-    name: z.string().min(1).optional(),
-    // role: z.enum(['USER', 'ADMIN']).optional(), // when you add roles
+    first_name: z.string().min(1).optional(),
+    last_name: z.string().min(1).optional(),
+    phone: z.string().optional(),
+    image: z.string().optional(),
+    preferredLanguage: z.string().optional(),
   }),
 });
 
@@ -16,7 +19,11 @@ export const changePasswordSchema = z.object({
   }),
 });
 
-export type ChangePasswordInput = z.infer<typeof changePasswordSchema>['body'];
+export const updateSettingsSchema = z.object({
+  body: z.object({
+    preferredLanguage: z.string().optional(),
+  }),
+});
 
 export const updateUserRoleSchema = z.object({
   params: z.object({
@@ -27,7 +34,6 @@ export const updateUserRoleSchema = z.object({
   }),
 });
 
-export type UpdateUserRoleInput = z.infer<typeof updateUserRoleSchema>;
 export const updateUserStatusSchema = z.object({
   params: z.object({
     id: z.string().cuid(),
@@ -36,5 +42,3 @@ export const updateUserStatusSchema = z.object({
     isActive: z.boolean(),
   }),
 });
-
-export type UpdateUserStatusInput = z.infer<typeof updateUserStatusSchema>;
