@@ -6,19 +6,45 @@ import bcrypt from 'bcryptjs';
 export async function getProfile(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, email: true, first_name: true, last_name: true, createdAt: true },
+    select: {
+      id: true,
+      email: true,
+      first_name: true,
+      last_name: true,
+      phone: true,
+      image: true,
+      preferredLanguage: true,
+      role: true,
+      createdAt: true,
+    },
   });
+
   if (!user) throw new AppError('User not found', 404);
+
   return user;
 }
 
-export async function updateProfile(userId: string, input: UpdateProfileInput) {
-  const user = await prisma.user.update({
+export async function updateProfile(userId: string, input: any) {
+  return prisma.user.update({
     where: { id: userId },
-    data: { first_name: input.name },
-    select: { id: true, email: true, first_name: true, last_name: true, createdAt: true },
+    data: {
+      first_name: input.first_name,
+      last_name: input.last_name,
+      phone: input.phone,
+      image: input.image,
+      preferredLanguage: input.preferredLanguage,
+    },
+    select: {
+      id: true,
+      email: true,
+      first_name: true,
+      last_name: true,
+      phone: true,
+      image: true,
+      preferredLanguage: true,
+      role: true,
+    },
   });
-  return user;
 }
 
 export async function changePassword(

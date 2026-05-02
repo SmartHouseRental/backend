@@ -158,6 +158,37 @@ router.patch(
  *       200:
  *         description: User status updated
  */
+/**
+ * @swagger
+ * /api/v1/users/settings:
+ *   patch:
+ *     summary: Update user settings
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               preferredLanguage:
+ *                 type: string
+ *                 example: en
+ *               phone:
+ *                 type: string
+ *                 example: 0912345678
+ *               image:
+ *                 type: string
+ *                 example: https://example.com/profile.jpg
+ *     responses:
+ *       200:
+ *         description: Settings updated successfully
+ *       401:
+ *         description: Unauthorized
+ */
+router.patch('/settings', userController.updateSettings);
 router.patch(
   '/:id/status',
   requireAuth,

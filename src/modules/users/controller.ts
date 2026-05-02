@@ -141,4 +141,14 @@ export async function updateUserStatus(req: Request, res: Response) {
     });
   }
 }
+export async function updateSettings(req: Request, res: Response) {
+  const userId = (req as any).userId;
+
+  const user = await userService.updateProfile(userId, req.body);
+
+  return res.status(200).json({
+    status: 'success',
+    data: user,
+  });
+}
 
