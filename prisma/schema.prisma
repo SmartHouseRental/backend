@@ -26,6 +26,8 @@ model User {
   // User snippet explicitly says: "emailVerified Boolean @default(false)". I will follow snippet.
   image         String?
   phone         String? @unique
+  location      String?
+  bio           String?
 
   role              Role    @default(renter)
   preferredLanguage String?
@@ -59,7 +61,7 @@ model User {
   auditLogs           AuditLog[]
 
   status            UserStatus @default(active)
-  verificationState VerificationState @default(pending_otp)
+  verificationState VerificationState @default(pending)
 
   renterAgreements  Agreement[] @relation("RenterAgreements")
   ownerAgreements   Agreement[] @relation("OwnerAgreements")
@@ -73,6 +75,9 @@ model User {
   preferences      UserPreference?
   searchHistories  SearchHistory[]
   interactions     UserInteraction[]
+  
+  bankDetail            BankDetail?
+  notificationPreference NotificationPreference?
 
   // reportsSubmitted  Report[] @relation("SubmittedReports")
   // reportsAgainst    Report[] @relation("ReportsAgainst")
@@ -138,14 +143,14 @@ enum Role {
 enum UserStatus {
   active
   suspended
-  banned
+  pending
 }
 
 enum VerificationState {
   verified
-  pending_otp
-  pending_documents
+  pending
   rejected
+  resubmit
 }
 
 // =======================
@@ -264,9 +269,8 @@ model Appointment {
 
 enum AppointmentStatus {
   PENDING
-  CONFIRMED
-  DECLINED
-  CANCELLED
+  ACCEPTED
+  REJECTED
 }
 
 model Message {
@@ -374,6 +378,8 @@ enum NotificationType {
   MESSAGE_NEW
   APPOINTMENT_BOOKED
   APPOINTMENT_UPDATED
+  PAYMENT_RECEIVED
+  PAYMENT_CONFIRMED
 }
 
 // =======================
@@ -394,6 +400,7 @@ model Agreement {
   endDate       DateTime
   status        AgreementStatus @default(draft)
   paymentStatus PaymentStatus @default(pending)
+  payments      Payment[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -415,6 +422,25 @@ enum PaymentStatus {
   confirmed
   proof_uploaded
   pending
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  agreementId String
+  agreement   Agreement     @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  amount      Float
+  currency    String        @default("ETB")
+  proofUrl    String?
+  status      PaymentStatus @default(pending)
+  paidAt      DateTime      @default(now())
+  confirmedAt DateTime?
+  stripeId    String?       @unique // Added for Stripe integration
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([agreementId])
+  @@index([status])
+  @@index([paidAt])
 }
 
 model Report {
@@ -451,11 +477,12 @@ enum ReportStatus {
 
 model VerificationDocument {
   id             String   @id @default(cuid())
-  userId         String
+  userId         String   @unique                            // one record per user
   user           User     @relation("VerificationDocuments", fields: [userId], references: [id])
-  documentType   VerificationDocumentType
-  documentUrl    String
-  status         VerificationStatus @default(pending)
+  frontUrl       String?                                     // NATIONAL_ID_FRONT
+  backUrl        String?                                     // NATIONAL_ID_BACK
+  livePhotoUrl   String?                                     // OWNER_PHOTO
+  status         VerificationStatus @default(pending)        // admin reviews once
   submittedAt    DateTime @default(now())
   reviewedAt     DateTime?
   reviewedById   String?
@@ -464,16 +491,17 @@ model VerificationDocument {
   @@index([userId])
 }
 
-enum VerificationDocumentType {
-  national_id
-  passport
-  ownership_deed
-}
+// enum VerificationDocumentType {
+//   national_id
+//   passport
+//   ownership_deed
+// }
 
 enum VerificationStatus {
   pending
   approved
   rejected
+  resubmit
 }
 
 model Review {
@@ -517,11 +545,12 @@ model UserPreference {
   userId             String   @unique
   preferredPriceMin  Float?
   preferredPriceMax  Float?
+  preferredCurrency  String?  @default("ETB")
   preferredBedrooms  Int?
-  preferredLocations String[]
+  preferredLocations Json?    // Array of { address: string, lat: number, lng: number }
   preferredAmenities String[]
-
   preferredType      PropertyType?
+  furnishStatus      String?  // furnished, semi-furnished, unfurnished
 
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -570,4 +599,38 @@ model PropertyEmbedding {
   updatedAt  DateTime @updatedAt
 
   property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+}
+
+// =======================
+// PROFILE & BANKING MODELS
+// =======================
+
+model BankDetail {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bankName        String
+  accountNumber   String   // Stored encrypted in production
+  holderName      String
+  branch          String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model NotificationPreference {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments    Boolean  @default(true)
+  agreements      Boolean  @default(true)
+  payments        Boolean  @default(true)
+  reviews         Boolean  @default(false)
+  reports         Boolean  @default(true)
+  system          Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
 }

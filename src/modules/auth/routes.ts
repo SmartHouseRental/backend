@@ -9,6 +9,7 @@ const router = Router();
  * /api/v1/auth/register:
  *   post:
  *     summary: Register a new user
+ *     description: Create a new account. If the role is 'owner', the account will require manual admin verification (isVerified) before the user can list properties.
  *     tags: [Auth]
  *     requestBody:
  *       required: true
@@ -38,7 +39,7 @@ const router = Router();
  *                 enum: [owner, renter]
  *                 default: renter
  *                 example: owner
- *                 description: Select account role during registration
+ *                 description: Select account role. Owners must be verified by an admin.
  *     responses:
  *       201:
  *         description: User created
@@ -90,6 +91,20 @@ router.post('/login', authController.login);
  *     responses:
  *       200:
  *         description: New access token generated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthUserEnvelope'
+ *             example:
+ *               status: success
+ *               data:
+ *                 user:
+ *                   id: "cmor19t1w0000a3jsf53p3zy0"
+ *                   email: "user@example.com"
+ *                   role: "owner"
+ *                   isVerified: false
+ *                 accessToken: "new_access_token_here"
+ *                 refreshToken: "new_refresh_token_here"
  *       401:
  *         description: Invalid or expired refresh token
  */
@@ -104,6 +119,11 @@ router.post('/refresh-token', authController.refreshToken);
  *     responses:
  *       200:
  *         description: Logged out successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               status: success
+ *               message: Logged out successfully
  */
 router.post('/logout', authController.logout);
 
@@ -122,6 +142,11 @@ router.post('/logout', authController.logout);
  *     responses:
  *       200:
  *         description: Email verified successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               status: success
+ *               message: Email verified successfully
  *       400:
  *         description: Invalid or expired code
  */
@@ -148,6 +173,11 @@ router.post('/verify-email', authController.verifyEmail);
  *     responses:
  *       200:
  *         description: Verification code sent successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               status: success
+ *               message: A new verification code has been sent.
  *       400:
  *         description: Validation failed or email already verified
  *       404:
@@ -170,6 +200,11 @@ router.post('/resend-code', authController.resendVerificationCode);
  *     responses:
  *       200:
  *         description: Email sent if account exists
+ *         content:
+ *           application/json:
+ *             example:
+ *               status: success
+ *               message: A password reset code has been sent.
  *       400:
  *         description: Validation failed
  */
@@ -190,6 +225,11 @@ router.post('/forgot-password', authController.forgotPassword);
  *     responses:
  *       200:
  *         description: Password reset successfully
+ *         content:
+ *           application/json:
+ *             example:
+ *               status: success
+ *               message: Password has been reset successfully.
  *       400:
  *         description: Invalid or expired code
  */
@@ -210,6 +250,16 @@ router.post('/reset-password', authController.resetPassword);
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/UserEnvelope'
+ *             example:
+ *               status: success
+ *               data:
+ *                 user:
+ *                   id: "cmor19t1w0000a3jsf53p3zy0"
+ *                   email: "user@example.com"
+ *                   first_name: "string"
+ *                   last_name: "string"
+ *                   role: "owner"
+ *                   isVerified: false
  *       401:
  *         description: Missing or invalid token
  */
@@ -224,6 +274,11 @@ router.get('/me', requireAuth, authController.getMe);
  *     responses:
  *       200:
  *         description: Auth module is healthy
+ *         content:
+ *           application/json:
+ *             example:
+ *               status: ok
+ *               module: auth
  */
 router.get('/health', (_, res) => res.json({ status: 'ok', module: 'auth' }));
 

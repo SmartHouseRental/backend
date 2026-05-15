@@ -110,7 +110,6 @@ CREATE TABLE "VerificationDocument" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
     "documentType" "VerificationDocumentType" NOT NULL,
-    "documentUrl" TEXT NOT NULL,
     "status" "VerificationStatus" NOT NULL DEFAULT 'pending',
     "submittedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "reviewedAt" TIMESTAMP(3),

@@ -1,12 +1,8 @@
-import { Router } from "express";
-import controller from "./controller";
-import { requireAuth } from "../../middlewares/auth.middleware";
-import { validate } from "../../middlewares/validate";
-import {
-  preferenceSchema,
-  searchSchema,
-  interactionSchema
-} from "./schema";
+import { Router } from 'express';
+import controller from './controller';
+import { requireAuth } from '../../middlewares/auth.middleware';
+import { validate } from '../../middlewares/validate';
+import { preferenceSchema, searchSchema, interactionSchema } from './schema';
 
 const router = Router();
 
@@ -19,9 +15,11 @@ const router = Router();
 
 /**
  * @openapi
- * /api/v1/user/preferences:
+ * /api/v1/recommendations/preferences:
  *   post:
  *     summary: Save user preferences
+ *     description: |
+ *       Store or update the renter's search preferences including budget, location, and property type.
  *     tags: [Recommendation]
  *     security:
  *       - bearerAuth: []
@@ -32,37 +30,62 @@ const router = Router();
  *           schema:
  *             type: object
  *             properties:
- *               preferredPriceMin:
- *                 type: number
- *                 example: 10000
- *               preferredPriceMax:
- *                 type: number
- *                 example: 50000
- *               preferredBedrooms:
+ *               budget:
+ *                 type: object
+ *                 properties:
+ *                   min:
+ *                     type: number
+ *                     example: 15000
+ *                   max:
+ *                     type: number
+ *                     example: 80000
+ *                   currency:
+ *                     type: string
+ *                     example: "ETB"
+ *               bedrooms:
  *                 type: integer
  *                 example: 2
  *               preferredLocations:
  *                 type: array
  *                 items:
- *                   type: string
- *                 example: ["Addis Ababa"]
- *               preferredAmenities:
+ *                   type: object
+ *                   properties:
+ *                     address:
+ *                       type: string
+ *                       example: "Bole, Addis Ababa"
+ *                     lat:
+ *                       type: number
+ *                       example: 9.0044
+ *                     lng:
+ *                       type: number
+ *                       example: 38.7758
+ *               preferredType:
+ *                 type: string
+ *                 enum: [VILLA, APARTMENT, CONDO, STUDIO, HOUSE, PENTHOUSE]
+ *                 example: APARTMENT
+ *               amenities:
  *                 type: array
  *                 items:
  *                   type: string
- *                 example: ["wifi", "parking"]
- *               preferredType:
+ *                 example: ["Parking", "Security", "WiFi / Broadband"]
+ *               furnishStatus:
  *                 type: string
- *                 enum: [VILLA, APARTMENT, CONDO, STUDIO, HOUSE]
+ *                 enum: [furnished, semi-furnished, unfurnished]
+ *                 example: furnished
  *     responses:
  *       200:
  *         description: Preferences saved successfully
- */
-router.post("/user/preferences", requireAuth, validate(preferenceSchema), controller.savePreferences);
-
-/**
- * @openapi
- * /api/v1/user/preferences:
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
  *   get:
  *     summary: Get user preferences
  *     tags: [Recommendation]
@@ -72,7 +95,14 @@ router.post("/user/preferences", requireAuth, validate(preferenceSchema), contro
  *       200:
  *         description: User preferences fetched successfully
  */
-router.get("/user/preferences", requireAuth, controller.getPreferences);
+router.post(
+  '/preferences',
+  requireAuth,
+  validate(preferenceSchema),
+  controller.savePreferences
+);
+
+router.get('/preferences', requireAuth, controller.getPreferences);
 
 /**
  * @openapi
@@ -101,7 +131,7 @@ router.get("/user/preferences", requireAuth, controller.getPreferences);
  *       200:
  *         description: Search saved successfully
  */
-router.post("/search/history", requireAuth, validate(searchSchema), controller.saveSearch);
+router.post('/search/history', requireAuth, validate(searchSchema), controller.saveSearch);
 
 /**
  * @openapi
@@ -115,7 +145,7 @@ router.post("/search/history", requireAuth, validate(searchSchema), controller.s
  *       200:
  *         description: Search history fetched successfully
  */
-router.get("/search/history", requireAuth, controller.getSearchHistory);
+router.get('/search/history', requireAuth, controller.getSearchHistory);
 
 /**
  * @openapi
@@ -146,7 +176,7 @@ router.get("/search/history", requireAuth, controller.getSearchHistory);
  *       200:
  *         description: Interaction recorded successfully
  */
-router.post("/interactions", requireAuth, validate(interactionSchema), controller.trackInteraction);
+router.post('/interactions', requireAuth, validate(interactionSchema), controller.trackInteraction);
 
 /**
  * @openapi
@@ -160,7 +190,7 @@ router.post("/interactions", requireAuth, validate(interactionSchema), controlle
  *       200:
  *         description: Recommended properties fetched successfully
  */
-router.get("/properties/recommendations", requireAuth, controller.getRecommendations);
+router.get('/properties/recommendations', requireAuth, controller.getRecommendations);
 
 /**
  * @openapi
@@ -181,6 +211,6 @@ router.get("/properties/recommendations", requireAuth, controller.getRecommendat
  *       200:
  *         description: Similar properties fetched successfully
  */
-router.get("/properties/:id/similar", requireAuth, controller.getSimilarProperties);
+router.get('/properties/:id/similar', requireAuth, controller.getSimilarProperties);
 
 export default router;

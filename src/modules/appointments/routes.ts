@@ -56,7 +56,7 @@ router.post('/', appointmentController.book);
  *         name: status
  *         schema:
  *           type: string
- *           enum: [PENDING, CONFIRMED, DECLINED, CANCELLED]
+ *           enum: [PENDING, ACCEPTED, REJECTED]
  *       - in: query
  *         name: propertyId
  *         schema:
@@ -102,7 +102,16 @@ router.get('/', appointmentController.list);
  *             properties:
  *               status:
  *                 type: string
- *                 enum: [CONFIRMED, DECLINED, CANCELLED]
+ *                 enum: [ACCEPTED, REJECTED]
+ *         application/x-www-form-urlencoded:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - status
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [ACCEPTED, REJECTED]
  *     responses:
  *       200:
  *         description: Appointment updated
@@ -110,6 +119,40 @@ router.get('/', appointmentController.list);
  *         description: Only owner/agent can update status
  */
 router.patch('/:id/status', appointmentController.updateStatus);
+
+/**
+ * @swagger
+ * /api/v1/appointments/{id}/note:
+ *   patch:
+ *     summary: Update appointment note (owner/agent)
+ *     tags: [Appointments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - note
+ *             properties:
+ *               note:
+ *                 type: string
+ *                 maxLength: 500
+ *     responses:
+ *       200:
+ *         description: Appointment note updated
+ *       403:
+ *         description: Only owner/agent can update note
+ */
+router.patch('/:id/note', appointmentController.updateNote);
 
 /**
  * @swagger

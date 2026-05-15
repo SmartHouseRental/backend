@@ -4,6 +4,7 @@ import * as appointmentService from './service';
 import {
   createAppointmentSchema,
   listAppointmentsQuerySchema,
+  updateAppointmentNoteSchema,
   updateAppointmentStatusSchema,
 } from './schema';
 
@@ -81,4 +82,27 @@ export async function remove(req: Request, res: Response) {
   );
 
   return res.status(200).json({ status: 'success', data: result });
+}
+
+export async function updateNote(req: Request, res: Response) {
+  const auth = req as AuthenticatedRequest;
+  const appointmentId = String(req.params.id);
+  const parsed = updateAppointmentNoteSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Validation failed',
+      errors: parsed.error.flatten().fieldErrors,
+    });
+  }
+
+  const appointment = await appointmentService.updateAppointmentNote(
+    auth.userId,
+    auth.userRole,
+    appointmentId,
+    parsed.data
+  );
+
+  return res.status(200).json({ status: 'success', data: { appointment } });
 }

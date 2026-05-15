@@ -81,6 +81,29 @@ router.post('/conversations', messagingController.createConversation);
 
 /**
  * @swagger
+ * /api/v1/messaging/conversations/{id}:
+ *   get:
+ *     summary: Get metadata for a specific conversation
+ *     tags: [Messaging]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Conversation metadata
+ *       404:
+ *         description: Conversation not found
+ */
+router.get('/conversations/:id', messagingController.getMetadata);
+
+
+/**
+ * @swagger
  * /api/v1/messaging/conversations/{id}/messages:
  *   get:
  *     summary: List messages for a conversation
@@ -137,6 +160,29 @@ router.post('/conversations', messagingController.createConversation);
  *         description: Conversation not found
  */
 router.get('/conversations/:id/messages', messagingController.listMessages);
+
+/**
+ * @swagger
+ * /api/v1/messaging/conversations/{id}/read:
+ *   patch:
+ *     summary: Mark all messages in a conversation as read by the current user
+ *     tags: [Messaging]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Messages marked as read
+ *       404:
+ *         description: Conversation not found
+ */
+router.patch('/conversations/:id/read', messagingController.markRead);
+
 
 /**
  * @swagger

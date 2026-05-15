@@ -122,7 +122,6 @@ import {
  */
 router.get('/', validate(getPropertiesSchema, 'query'), getPropertiesController);
 
-
 /**
  * @openapi
  * /api/v1/properties/my:
@@ -218,7 +217,77 @@ router.get('/analytics', requireAuth, getOwnerPropertyAnalyticsController);
  *                   type: string
  *                   example: "Property fetched successfully"
  *                 data:
- *                   $ref: '#/components/schemas/Property'
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     type:
+ *                       type: object
+ *                       properties:
+ *                         en:
+ *                           type: string
+ *                         am:
+ *                           type: string
+ *                     title:
+ *                       type: object
+ *                     description:
+ *                       type: object
+ *                     address:
+ *                       type: object
+ *                       properties:
+ *                         en:
+ *                           type: string
+ *                         am:
+ *                           type: string
+ *                     price:
+ *                       type: object
+ *                       properties:
+ *                         value:
+ *                           type: number
+ *                         currency:
+ *                           type: string
+ *                     area:
+ *                       type: object
+ *                       properties:
+ *                         value:
+ *                           type: number
+ *                         unit:
+ *                           type: string
+ *                     leaseTerms:
+ *                       type: object
+ *                       properties:
+ *                         minDuration:
+ *                           type: string
+ *                         secureDeposit:
+ *                           type: object
+ *                           properties:
+ *                             value:
+ *                               type: number
+ *                             currency:
+ *                               type: string
+ *                         conditions:
+ *                           type: object
+ *                           properties:
+ *                             en:
+ *                               type: string
+ *                             am:
+ *                               type: string
+ *                     images:
+ *                       type: array
+ *                       items:
+ *                         type: string
+ *                     video:
+ *                       type: string
+ *                     availableFrom:
+ *                       type: string
+ *                       format: date
+ *                     status:
+ *                       type: string
+ *                     owner:
+ *                       type: object
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
  *       404:
  *         description: Property not found
  */
@@ -396,8 +465,6 @@ router.delete(
   validate(deletePropertySchema, 'params'),
   deletePropertyController
 );
-
-
 
 /**
  * @openapi

@@ -7,13 +7,21 @@ class RecommendationController {
   savePreferences: RequestHandler = async (req, res) => {
     const { userId } = req as AuthenticatedRequest;
     const result = await service.savePreferences(userId, req.body);
-    res.json(result);
+    res.json({
+      status: 'success',
+      message: 'Preferences saved successfully',
+      data: result,
+    });
   };
 
   getPreferences: RequestHandler = async (req, res) => {
     const { userId } = req as AuthenticatedRequest;
     const result = await service.getPreferences(userId);
-    res.json(result);
+    res.json({
+      status: 'success',
+      message: 'Preferences fetched successfully',
+      data: result,
+    });
   };
 
   saveSearch: RequestHandler = async (req, res) => {

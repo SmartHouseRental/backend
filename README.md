@@ -57,3 +57,16 @@ docker compose ps
 ```bash
 docker compose down
 ```
+
+## Prisma migrations on existing databases
+
+If your deployment targets an already-populated database, `npx prisma migrate deploy` can fail with `P3005` because Prisma expects migration history to be baselined first.
+
+In that case, create or mark a baseline migration as applied before running deploy, for example:
+
+```bash
+npx prisma migrate resolve --applied <baseline_migration_name>
+npx prisma migrate deploy
+```
+
+Use this only when the database schema already matches the baseline migration history.

@@ -101,12 +101,20 @@ async function validateReplyTarget(replyToId: string | undefined, conversationId
 }
 
 export async function listConversations(userId: string) {
-  return prisma.conversation.findMany({
+  const conversations = await prisma.conversation.findMany({
     where: {
       OR: [{ renterId: userId }, { ownerId: userId }],
     },
     orderBy: { updatedAt: 'desc' },
     include: {
+      property: {
+        select: {
+          id: true,
+          title: true,
+          location: true,
+          images: true,
+        },
+      },
       renter: { select: { id: true, first_name: true, last_name: true, email: true, image: true } },
       owner: { select: { id: true, first_name: true, last_name: true, email: true, image: true } },
       messages: {
@@ -116,6 +124,29 @@ export async function listConversations(userId: string) {
       },
     },
   });
+
+  // Calculate unread counts
+  return Promise.all(
+    conversations.map(async (conv) => {
+      const unreadCount = await prisma.message.count({
+        where: {
+          conversationId: conv.id,
+          senderId: { not: userId },
+          status: { not: 'READ' },
+        },
+      });
+
+      // Determine who the "other" person is
+      const participant = conv.renterId === userId ? conv.owner : conv.renter;
+
+      return {
+        ...conv,
+        participant,
+        lastMessage: conv.messages[0] || null,
+        unreadCount,
+      };
+    })
+  );
 }
 
 export async function createConversation(userId: string, input: CreateConversationInput) {
@@ -159,6 +190,11 @@ export async function createConversation(userId: string, input: CreateConversati
       ownerId,
       renterId,
       propertyId: propertyId ?? null,
+    },
+    include: {
+      property: { select: { id: true, title: true, location: true } },
+      renter: { select: { id: true, first_name: true, last_name: true, email: true, image: true } },
+      owner: { select: { id: true, first_name: true, last_name: true, email: true, image: true } },
     },
   });
 }
@@ -231,6 +267,52 @@ export async function sendMessage(
   });
 
   return { message, conversation };
+}
+
+export async function markConversationAsRead(conversationId: string, userId: string) {
+  const conversation = await ensureParticipant(conversationId, userId);
+  if (!conversation) throw new AppError('Conversation not found', 404);
+
+  await prisma.message.updateMany({
+    where: {
+      conversationId,
+      senderId: { not: userId },
+      status: { not: 'READ' },
+    },
+    data: { status: 'READ' },
+  });
+
+  return { success: true };
+}
+
+export async function getConversationMetadata(conversationId: string, userId: string) {
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    include: {
+      property: {
+        select: {
+          id: true,
+          title: true,
+          location: true,
+          images: true,
+        },
+      },
+      renter: { select: { id: true, first_name: true, last_name: true, email: true, image: true } },
+      owner: { select: { id: true, first_name: true, last_name: true, email: true, image: true } },
+    },
+  });
+
+  if (!conversation) throw new AppError('Conversation not found', 404);
+
+  const isParticipant = conversation.renterId === userId || conversation.ownerId === userId;
+  if (!isParticipant) throw new AppError('Access denied', 403);
+
+  const participant = conversation.renterId === userId ? conversation.owner : conversation.renter;
+
+  return {
+    ...conversation,
+    participant,
+  };
 }
 
 export async function updateMessageStatus(

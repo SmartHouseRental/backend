@@ -4,11 +4,19 @@ import { validate } from '../../middlewares/validate';
 import {
   adminUpdatePropertyBodySchema,
   adminUpdatePropertyParamsSchema,
+  getAdminPropertiesQuerySchema,
   getAnalyticsQuerySchema,
   getAuditLogsQuerySchema,
+  getOverviewQuerySchema,
   getPendingVerificationsQuerySchema,
 } from './schema';
-import { analytics, auditLogs, overrideProperty, pendingVerifications } from './controller';
+import {
+  analytics,
+  auditLogs,
+  overview,
+  overrideProperty,
+  pendingVerifications,
+} from './controller';
 import * as controller from './controller';
 
 const router = Router();
@@ -47,7 +55,226 @@ router.use(requireAuth, restrictTo('admin'));
  *       403:
  *         description: Forbidden (admin only)
  */
+/**
+ * @swagger
+ * /api/v1/admin/overview:
+ *   get:
+ *     summary: Get admin dashboard overview with stats, charts, and recent activity
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: range
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [weekly, monthly]
+ *           default: monthly
+ *         description: Optional timeframe for user growth chart
+ *       - in: query
+ *         name: timezone
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Optional IANA timezone string for date calculations
+ *     responses:
+ *       200:
+ *         description: Overview loaded successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: success
+ *                 message:
+ *                   type: string
+ *                   example: Overview loaded
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     lastUpdated:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2026-05-14T13:40:00.000Z"
+ *                     stats:
+ *                       type: object
+ *                       properties:
+ *                         totalUsers:
+ *                           type: object
+ *                           properties:
+ *                             value:
+ *                               type: integer
+ *                               example: 12450
+ *                             trendPercent:
+ *                               type: number
+ *                               example: 12
+ *                         activeListings:
+ *                           type: object
+ *                           properties:
+ *                             value:
+ *                               type: integer
+ *                               example: 3820
+ *                             trendPercent:
+ *                               type: number
+ *                               example: 8
+ *                         pendingVerifications:
+ *                           type: object
+ *                           properties:
+ *                             value:
+ *                               type: integer
+ *                               example: 24
+ *                             actionNeeded:
+ *                               type: boolean
+ *                               example: true
+ *                         activeAgreements:
+ *                           type: object
+ *                           properties:
+ *                             value:
+ *                               type: integer
+ *                               example: 890
+ *                             trendPercent:
+ *                               type: number
+ *                               example: 15
+ *                         totalReport:
+ *                           type: object
+ *                           properties:
+ *                             value:
+ *                               type: integer
+ *                               example: 890
+ *                             trendPercent:
+ *                               type: number
+ *                               example: 15
+ *                     userGrowth:
+ *                       type: object
+ *                       properties:
+ *                         range:
+ *                           type: string
+ *                           enum: [weekly, monthly]
+ *                           example: monthly
+ *                         labels:
+ *                           type: array
+ *                           items:
+ *                             type: string
+ *                           example: ["Oct", "Nov", "Dec", "Jan", "Feb", "Mar"]
+ *                         currentPeriod:
+ *                           type: array
+ *                           items:
+ *                             type: integer
+ *                           example: [220, 210, 240, 180, 120, 90]
+ *                         previousPeriod:
+ *                           type: array
+ *                           items:
+ *                             type: integer
+ *                           example: [250, 240, 270, 230, 190, 160]
+ *                     recentActivity:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             example: "ACT-001"
+ *                           type:
+ *                             type: string
+ *                             example: "OWNER_REGISTRATION"
+ *                           text:
+ *                             type: string
+ *                             example: "New owner registration"
+ *                           detail:
+ *                             type: string
+ *                             example: "Hana Bekele signed up and submitted verification documents."
+ *                           time:
+ *                             type: string
+ *                             example: "12 min ago"
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                             example: "2026-05-14T13:28:00.000Z"
+ *                     listingsByArea:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           area:
+ *                             type: string
+ *                             example: "Bole"
+ *                           count:
+ *                             type: integer
+ *                             example: 245
+ *                           percentage:
+ *                             type: number
+ *                             example: 35
+ *                       description: Top property listings grouped by area with percentage distribution
+ *                     paymentPerformance:
+ *                       type: object
+ *                       properties:
+ *                         successRate:
+ *                           type: integer
+ *                           minimum: 0
+ *                           maximum: 100
+ *                           example: 95
+ *                           description: Payment success rate percentage
+ *                         totalCollectionAmount:
+ *                           type: number
+ *                           example: 450000
+ *                           description: Total confirmed collection amount
+ *                         currency:
+ *                           type: string
+ *                           example: "ETB"
+ *                         label:
+ *                           type: string
+ *                           example: "On Time Collection"
+ *                           description: Dynamic label based on success rate
+ *                     recentProperties:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                             example: "PRP-9402"
+ *                           name:
+ *                             type: string
+ *                             example: "Horizon Peak Villa"
+ *                           owner:
+ *                             type: string
+ *                             example: "Michael Chen"
+ *                           ownerAvatar:
+ *                             type: string
+ *                             format: uri
+ *                             example: "https://cdn.example.com/avatars/michael.jpg"
+ *                           location:
+ *                             type: string
+ *                             example: "Bole, Addis Ababa"
+ *                           status:
+ *                             type: string
+ *                             enum: [PENDING, NEEDS_REVIEW, APPROVED, REJECTED]
+ *                             example: "PENDING"
+ *                           statusLabel:
+ *                             type: string
+ *                             example: "Pending"
+ *                           statusStyle:
+ *                             type: string
+ *                             example: "bg-amber-100 text-amber-700"
+ *                           dateSubmitted:
+ *                             type: string
+ *                             format: date-time
+ *                             example: "2026-03-22T10:00:00.000Z"
+ *                           image:
+ *                             type: string
+ *                             format: uri
+ *                             nullable: true
+ *                             example: "https://cdn.example.com/properties/prp-9402-cover.jpg"
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden (admin only)
+ */
 router.get('/analytics', validate(getAnalyticsQuerySchema, 'query'), analytics);
+router.get('/overview', validate(getOverviewQuerySchema, 'query'), overview);
 
 /**
  * @swagger
@@ -296,7 +523,7 @@ router.get('/users/:id', controller.userGet);
  * @swagger
  * /api/v1/admin/users/{id}/status:
  *   patch:
- *     summary: Update an existing user's status 
+ *     summary: Update an existing user's status
  *     tags: [Admin]
  *     security:
  *       - bearerAuth: []
@@ -320,7 +547,11 @@ router.get('/users/:id', controller.userGet);
  *       200:
  *         description: Status updated successfully
  */
-router.patch('/users/:id/status', validate(adminUpdatePropertyParamsSchema, 'params'), controller.userUpdateStatus);
+router.patch(
+  '/users/:id/status',
+  validate(adminUpdatePropertyParamsSchema, 'params'),
+  controller.userUpdateStatus
+);
 
 /**
  * @swagger
@@ -345,12 +576,19 @@ router.patch('/users/:id/status', validate(adminUpdatePropertyParamsSchema, 'par
  *             properties:
  *               verificationState:
  *                 type: string
- *                 enum: [verified, pending_otp, pending_documents, rejected]
+ *                 enum: [verified, pending, rejected, resubmit]
+ *               comment:
+ *                 type: string
+ *                 description: Optional comment about the verification change
  *     responses:
  *       200:
  *         description: Verification state updated successfully
  */
-router.patch('/users/:id/verification', validate(adminUpdatePropertyParamsSchema, 'params'), controller.userUpdateVerification);
+router.patch(
+  '/users/:id/verification',
+  validate(adminUpdatePropertyParamsSchema, 'params'),
+  controller.userUpdateVerification
+);
 
 // Properties
 /**
@@ -376,7 +614,11 @@ router.patch('/users/:id/verification', validate(adminUpdatePropertyParamsSchema
  *       200:
  *         description: Properties fetched successfully
  */
-router.get('/properties', controller.propertiesList);
+router.get(
+  '/properties',
+  validate(getAdminPropertiesQuerySchema, 'query'),
+  controller.propertiesList
+);
 
 // Agreements
 /**
@@ -590,6 +832,8 @@ router.patch('/verifications/:id/resolve', controller.verificationResolve);
  *         description: Property details
  */
 router.get('/properties/:id', controller.propertyGet);
+router.patch('/properties/:id/approve', controller.propertyApprove);
+router.patch('/properties/:id/reject', controller.propertyReject);
 
 // Reports (Detail)
 /**

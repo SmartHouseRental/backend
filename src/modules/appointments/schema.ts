@@ -13,16 +13,21 @@ export const createAppointmentSchema = z
   });
 
 export const listAppointmentsQuerySchema = z.object({
-  status: z.enum(['PENDING', 'CONFIRMED', 'DECLINED', 'CANCELLED']).optional(),
+  status: z.enum(['PENDING', 'ACCEPTED', 'REJECTED']).optional(),
   propertyId: z.string().optional(),
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
 });
 
 export const updateAppointmentStatusSchema = z.object({
-  status: z.enum(['CONFIRMED', 'DECLINED', 'CANCELLED']),
+  status: z.enum(['ACCEPTED', 'REJECTED']),
+});
+
+export const updateAppointmentNoteSchema = z.object({
+  note: z.string().max(500),
 });
 
 export type CreateAppointmentInput = z.infer<typeof createAppointmentSchema>;
 export type ListAppointmentsQuery = z.infer<typeof listAppointmentsQuerySchema>;
 export type UpdateAppointmentStatusInput = z.infer<typeof updateAppointmentStatusSchema>;
+export type UpdateAppointmentNoteInput = z.infer<typeof updateAppointmentNoteSchema>;

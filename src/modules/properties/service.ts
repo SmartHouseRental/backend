@@ -32,6 +32,58 @@ function localizeProperty<T extends { title: unknown; description: unknown }>(
   };
 }
 
+const TYPE_LABELS: Record<string, { en: string; am: string }> = {
+  VILLA: { en: 'Villa', am: 'ቪላ' },
+  APARTMENT: { en: 'Apartment', am: 'አፓርታማ' },
+  CONDO: { en: 'Condo', am: 'ኮንዶ' },
+  STUDIO: { en: 'Studio', am: 'ስቱዲዮ' },
+  HOUSE: { en: 'House', am: 'ቤት' },
+  PENTHOUSE: { en: 'Penthouse', am: 'ፔንትሃውስ' },
+};
+
+function formatPropertyResponse(property: any) {
+  const titleMap = toRecord(property.title);
+  const descriptionMap = toRecord(property.description);
+  const rentTerms = (property.rentTerms as any) || {};
+
+  const typeLabel = TYPE_LABELS[property.type] ?? {
+    en: property.type ?? '',
+    am: property.type ?? '',
+  };
+
+  return {
+    id: property.id,
+    type: typeLabel,
+    title: titleMap,
+    description: descriptionMap,
+    address: { en: property.address ?? '', am: property.address ?? '' },
+    price: { value: property.price ?? null, currency: rentTerms.currency ?? 'ETB' },
+    area: { value: property.area ?? null, unit: 'sqm' },
+    leaseTerms: {
+      minDuration: rentTerms.minMonths
+        ? String(rentTerms.minMonths)
+        : rentTerms.minDuration
+          ? String(rentTerms.minDuration)
+          : undefined,
+      secureDeposit: rentTerms.secureDeposit
+        ? { value: rentTerms.secureDeposit, currency: rentTerms.currency ?? 'ETB' }
+        : undefined,
+      conditions: {
+        en: descriptionMap.en ?? '',
+        am: descriptionMap.am ?? '',
+      },
+    },
+    images: property.images ?? [],
+    video: Array.isArray(property.videos) && property.videos.length > 0 ? property.videos[0] : '',
+    availableFrom:
+      property.availableFrom ??
+      (property.createdAt ? property.createdAt.toISOString().slice(0, 10) : null),
+    status: property.status,
+    owner: property.owner ?? null,
+    createdAt: property.createdAt,
+  };
+}
+
 export const propertyService = {
   async createProperty(ownerId: string, data: CreatePropertyInput) {
     return await prisma.property.create({
@@ -125,7 +177,7 @@ export const propertyService = {
     ]);
 
     return {
-      properties: properties.map((property) => localizeProperty(property, normalizedLanguage)),
+      properties: properties.map((property) => formatPropertyResponse(property)),
       meta: {
         total,
         page,
@@ -155,7 +207,7 @@ export const propertyService = {
     });
 
     if (!property) return null;
-    return localizeProperty(property, normalizedLanguage);
+    return formatPropertyResponse(property);
   },
 
   async updateProperty(ownerId: string, propertyId: string, data: UpdatePropertyInput) {
@@ -310,7 +362,7 @@ export const propertyService = {
     const existingView = await prisma.userInteraction.findFirst({
       where: {
         propertyId,
-        type: "VIEW",
+        type: 'VIEW',
         userId,
         createdAt: {
           gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
@@ -324,7 +376,7 @@ export const propertyService = {
       data: {
         propertyId,
         userId,
-        type: "VIEW",
+        type: 'VIEW',
       },
     });
 
@@ -380,5 +432,5 @@ export const propertyService = {
       pending: pendingProperties,
       totalViews,
     };
-  }
+  },
 };

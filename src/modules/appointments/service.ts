@@ -6,6 +6,7 @@ import { createAuditLog, createNotification } from '../notifications/service';
 import type {
   CreateAppointmentInput,
   ListAppointmentsQuery,
+  UpdateAppointmentNoteInput,
   UpdateAppointmentStatusInput,
 } from './schema';
 
@@ -108,6 +109,13 @@ export async function bookAppointment(
 
   if (!property) throw new AppError('Property not found', 404);
 
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true },
+  });
+
+  if (!user) throw new AppError('User account not found. Please log in again.', 404);
+
   if (property.ownerId === userId) {
     throw new AppError('You cannot book an appointment for your own property', 400);
   }
@@ -115,7 +123,7 @@ export async function bookAppointment(
   const overlapping = await prisma.appointment.findFirst({
     where: {
       renterId: userId,
-      status: { in: ['PENDING', 'CONFIRMED'] },
+      status: { in: ['PENDING', 'ACCEPTED'] },
       startsAt: { lt: input.endsAt },
       endsAt: { gt: input.startsAt },
     },
@@ -222,12 +230,12 @@ export async function updateAppointmentStatus(
   const canManage = userRole === 'admin' || appointment.ownerId === userId;
   if (!canManage) throw new AppError('Only owner/agent can update appointment status', 403);
 
-  if (input.status === 'CONFIRMED') {
+  if (input.status === 'ACCEPTED') {
     const overlap = await prisma.appointment.findFirst({
       where: {
         ownerId: appointment.ownerId,
         id: { not: appointment.id },
-        status: 'CONFIRMED',
+        status: 'ACCEPTED',
         startsAt: { lt: appointment.endsAt },
         endsAt: { gt: appointment.startsAt },
       },
@@ -314,4 +322,48 @@ export async function deleteAppointment(userId: string, userRole: string, appoin
   });
 
   return { id: appointmentId };
+}
+
+export async function updateAppointmentNote(
+  userId: string,
+  userRole: string,
+  appointmentId: string,
+  input: UpdateAppointmentNoteInput
+) {
+  const appointment = await prisma.appointment.findUnique({
+    where: { id: appointmentId },
+    select: {
+      id: true,
+      ownerId: true,
+      note: true,
+    },
+  });
+
+  if (!appointment) {
+    throw new AppError('Appointment not found', 404);
+  }
+
+  const canUpdateNote = userRole === 'admin' || appointment.ownerId === userId;
+  if (!canUpdateNote) {
+    throw new AppError('Only owner/agent can update appointment note', 403);
+  }
+
+  const updated = await prisma.appointment.update({
+    where: { id: appointmentId },
+    data: { note: input.note },
+    select: appointmentSelect,
+  });
+
+  await createAuditLog({
+    actorId: userId,
+    eventType: 'APPOINTMENT_NOTE_UPDATED',
+    entityType: 'Appointment',
+    entityId: updated.id,
+    metadata: {
+      previousNote: appointment.note,
+      note: updated.note,
+    },
+  });
+
+  return updated;
 }

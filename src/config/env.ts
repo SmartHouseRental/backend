@@ -9,6 +9,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url().default('redis://localhost:6379'),
   FRONTEND_URL: z.string().url().default('http://localhost:3000'),
+  ALLOWED_ORIGINS: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z
     .string()
@@ -49,7 +50,29 @@ function deriveBaseUrl(appBaseUrl: string | undefined, nodeEnv: string, port: st
   }
 }
 
+const localOrigins = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+];
+
+const configuredOrigins = rawEnv.ALLOWED_ORIGINS
+  ? rawEnv.ALLOWED_ORIGINS.split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean)
+  : [];
+
 export const env = {
   ...rawEnv,
   APP_BASE_URL: deriveBaseUrl(rawEnv.APP_BASE_URL, rawEnv.NODE_ENV, rawEnv.PORT),
+  ALLOWED_ORIGINS: Array.from(
+    new Set(
+      [
+        rawEnv.FRONTEND_URL,
+        ...(rawEnv.NODE_ENV === 'production' ? [] : localOrigins),
+        ...configuredOrigins,
+      ].filter(Boolean) as string[]
+    )
+  ),
 };

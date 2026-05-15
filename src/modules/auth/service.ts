@@ -154,6 +154,7 @@ export async function register(input: RegisterInput) {
         role: true,
         createdAt: true,
         emailVerified: true,
+        isVerified: true,
       } as Prisma.UserSelect,
     });
   } catch (error) {
@@ -172,6 +173,9 @@ export async function register(input: RegisterInput) {
     throw error;
   }
 
+  const { isVerified, ...safeUser } = user;
+  const responseUser = user.role === 'owner' ? { ...safeUser, isVerified } : safeUser;
+
   const { accessToken, refreshToken } = generateTokenPair(user.id, user.role);
   await storeRefreshToken(user.id, refreshToken);
 
@@ -185,7 +189,7 @@ export async function register(input: RegisterInput) {
     }
   }
 
-  return { user, accessToken, refreshToken };
+  return { user: responseUser, accessToken, refreshToken };
 }
 
 /**

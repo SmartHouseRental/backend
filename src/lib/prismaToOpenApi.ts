@@ -261,6 +261,23 @@ function generateAuthSchemas(
         },
       },
     },
+    example: {
+      status: 'success',
+      data: {
+        user: {
+          id: 'cmor19t1w0000a3jsf53p3zy0',
+          email: 'user@example.com',
+          first_name: 'string',
+          last_name: 'string',
+          role: 'owner',
+          createdAt: '2026-05-04T10:05:10.100Z',
+          emailVerified: false,
+          isVerified: false,
+        },
+        accessToken:
+          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbW9yMTl0MXcwMDAwYTNqc2Y1M3AzenkwIiwicm9sZSI6Im93bmVyIiwidHlwZSI6ImFjY2VzcyIsImlhdCI6MTc3Nzg4OTExMCwiZXhwIjoxNzc3ODkyNzEwfQ.35bL-0McfRoAE6OlOB6OfNv3kIUG5Z7BERB14wujARI',
+      },
+    },
   };
   out.UserEnvelope = {
     type: 'object',

@@ -1,3 +1,4 @@
+import 'dotenv/config';
 /// <reference types="node" />
 import {
   PrismaClient,
@@ -10,10 +11,8 @@ import {
   PaymentStatus,
   ReportStatus,
   ReportTargetType,
-  VerificationDocumentType,
   VerificationStatus,
   ReviewStatus,
-  ReviewTargetType,
   AppointmentStatus,
   NotificationType,
   MessageStatus,
@@ -36,6 +35,27 @@ function daysFromNow(days: number) {
   return date;
 }
 
+function addHours(date: Date, hours: number) {
+  const next = new Date(date);
+  next.setHours(next.getHours() + hours);
+  return next;
+}
+
+function addMinutes(date: Date, minutes: number) {
+  const next = new Date(date);
+  next.setMinutes(next.getMinutes() + minutes);
+  return next;
+}
+
+function appointmentSlot(daysAhead: number, startHour: number, durationMinutes = 45) {
+  const start = daysFromNow(daysAhead);
+  start.setHours(startHour, 0, 0, 0);
+  return {
+    startsAt: start,
+    endsAt: addMinutes(start, durationMinutes),
+  };
+}
+
 async function main() {
   console.log('Seeding database...');
 
@@ -56,6 +76,7 @@ async function main() {
   await prisma.session.deleteMany();
   await prisma.account.deleteMany();
   await prisma.verificationToken.deleteMany();
+  await prisma.payment.deleteMany();
   await prisma.user.deleteMany();
 
   // 1) Users
@@ -102,7 +123,7 @@ async function main() {
       role: Role.owner,
       emailVerified: true,
       isVerified: false,
-      verificationState: VerificationState.pending_documents,
+      verificationState: VerificationState.pending,
       status: UserStatus.active,
       image: 'https://i.pravatar.cc/150?u=sarah',
     },
@@ -118,7 +139,7 @@ async function main() {
       role: Role.owner,
       emailVerified: true,
       isVerified: false,
-      verificationState: VerificationState.rejected,
+      verificationState: VerificationState.resubmit,
       status: UserStatus.suspended,
       image: 'https://i.pravatar.cc/150?u=david',
     },
@@ -134,8 +155,26 @@ async function main() {
       role: Role.owner,
       emailVerified: false,
       isVerified: false,
-      verificationState: VerificationState.pending_documents,
+      verificationState: VerificationState.pending,
       status: UserStatus.active,
+    },
+  });
+
+  const owner5 = await prisma.user.create({
+    data: {
+      email: 'dawit.m@email.com',
+      password: passwordHash,
+      first_name: 'Dawit',
+      last_name: 'Mekonnen',
+      phone: '+251 91 234 5678',
+      role: Role.owner,
+      emailVerified: true,
+      isVerified: true,
+      verificationState: VerificationState.verified,
+      status: UserStatus.active,
+      location: 'Addis Ababa, Ethiopia',
+      bio: 'Property owner with 5+ years of experience managing residential rentals in Addis Ababa. Specializing in premium villas and modern apartments.',
+      image: 'https://cdn.example.com/avatars/dawit.jpg',
     },
   });
 
@@ -181,12 +220,83 @@ async function main() {
       role: Role.renter,
       emailVerified: false,
       isVerified: false,
-      verificationState: VerificationState.pending_otp,
+      verificationState: VerificationState.pending,
       status: UserStatus.active,
     },
   });
 
   console.log('Created Users');
+
+  // 1b) User preferences aligned with the recommendation endpoint payload
+  const renter1Preference = {
+    preferredLocations: [
+      {
+        city: textPair('Seattle', 'ሲያትል'),
+        region: textPair('Washington', 'ዋሽንግተን'),
+        lat: 47.6062,
+        lng: -122.3321,
+      },
+    ],
+    budget: { min: 800, max: 1600, currency: 'ETB' },
+    bedrooms: { min: 1, max: 2 },
+    bathrooms: { min: 1, max: 2 },
+    amenities: ['parking', 'wifi', 'dishwasher'],
+    furnishStatus: 'unfunished' as const,
+    notes: textPair('Prefer quiet buildings near transit', 'በትራንስፖርት አቅራቢያ ጸጥ ያሉ ህንፃዎችን እመርጣለሁ'),
+    preferredPropertyType: textPair('Villa', 'ቪላ'),
+    locale: 'en',
+    supportedLocales: ['en', 'am'],
+  };
+
+  await prisma.userPreference.create({
+    data: {
+      userId: renter1.id,
+      preferredPriceMin: renter1Preference.budget.min,
+      preferredPriceMax: renter1Preference.budget.max,
+      preferredBedrooms: renter1Preference.bedrooms.min,
+      preferredLocations: renter1Preference.preferredLocations.map(
+        (location) => `${location.city.en}, ${location.region.en}`
+      ),
+      preferredAmenities: renter1Preference.amenities,
+      preferredType: PropertyType.VILLA,
+    },
+  });
+
+  const renter2Preference = {
+    preferredLocations: [
+      {
+        city: textPair('Kazanchis', 'ካዛንቺስ'),
+        region: textPair('Addis Ababa', 'አዲስ አበባ'),
+        lat: 8.9955,
+        lng: 38.7898,
+      },
+    ],
+    budget: { min: 12000, max: 28000, currency: 'ETB' },
+    bedrooms: { min: 2, max: 2 },
+    bathrooms: { min: 1, max: 1 },
+    amenities: ['wifi', 'elevator', 'backup power'],
+    furnishStatus: 'semiFurnished' as const,
+    notes: textPair('Prefers walkable neighborhoods', 'በእግር የሚደርሱ አካባቢዎችን ይመርጣል'),
+    preferredPropertyType: textPair('Apartment', 'አፓርትመንት'),
+    locale: 'en',
+    supportedLocales: ['en', 'am'],
+  };
+
+  await prisma.userPreference.create({
+    data: {
+      userId: renter2.id,
+      preferredPriceMin: renter2Preference.budget.min,
+      preferredPriceMax: renter2Preference.budget.max,
+      preferredBedrooms: renter2Preference.bedrooms.min,
+      preferredLocations: renter2Preference.preferredLocations.map(
+        (location) => `${location.city.en}, ${location.region.en}`
+      ),
+      preferredAmenities: renter2Preference.amenities,
+      preferredType: PropertyType.APARTMENT,
+    },
+  });
+
+  console.log('Created User Preferences');
 
   // 2) Auth-supporting records
   await prisma.account.createMany({
@@ -246,34 +356,63 @@ async function main() {
 
   console.log('Created Auth records');
 
-  // 3) Verification documents
+  // 3) Verification documents — one record per user, admin reviews all at once
   await prisma.verificationDocument.createMany({
     data: [
       {
+        // owner2 (Sarah) — submitted front + back, pending admin review
         userId: owner2.id,
-        documentType: VerificationDocumentType.national_id,
-        documentUrl: 'https://example.com/docs/sarah-national-id.jpg',
+        frontUrl: 'https://example.com/docs/sarah-national-id-front.jpg',
+        backUrl: 'https://example.com/docs/sarah-national-id-back.jpg',
         status: VerificationStatus.pending,
       },
       {
+        // owner3 (David) — needs to resubmit
         userId: owner3.id,
-        documentType: VerificationDocumentType.national_id,
-        documentUrl: 'https://example.com/docs/david-national-id.jpg',
-        status: VerificationStatus.rejected,
+        frontUrl: 'https://example.com/docs/david-national-id-front.jpg',
+        backUrl: 'https://example.com/docs/david-national-id-back.jpg',
+        livePhotoUrl: 'https://example.com/docs/david-national-id-live.jpg',
+        status: VerificationStatus.resubmit,
       },
       {
+        // owner4 (Mulugeta) — only front submitted, pending
         userId: owner4.id,
-        documentType: VerificationDocumentType.national_id,
-        documentUrl: 'https://example.com/docs/mulugeta-national-id.jpg',
+        frontUrl: 'https://example.com/docs/mulugeta-national-id-front.jpg',
         status: VerificationStatus.pending,
       },
       {
-        userId: owner4.id,
-        documentType: VerificationDocumentType.passport,
-        documentUrl: 'https://example.com/docs/mulugeta-passport.jpg',
-        status: VerificationStatus.pending,
+        // owner5 (Dawit) — fully verified with all three docs
+        userId: owner5.id,
+        frontUrl: 'national-id-front-2026.pdf',
+        backUrl: 'national-id-back-2026.pdf',
+        livePhotoUrl: 'owner-photo-2026.jpg',
+        status: VerificationStatus.approved,
+        submittedAt: new Date('2026-03-15T10:00:00.000Z'),
       },
     ],
+  });
+
+  // 3b) Profile related records for Dawit
+  await prisma.bankDetail.create({
+    data: {
+      userId: owner5.id,
+      bankName: 'Commercial Bank of Ethiopia',
+      accountNumber: '1000123456784521',
+      holderName: 'Dawit Mekonnen',
+      branch: 'Bole Branch',
+    },
+  });
+
+  await prisma.notificationPreference.create({
+    data: {
+      userId: owner5.id,
+      appointments: true,
+      agreements: true,
+      payments: true,
+      reviews: false,
+      reports: true,
+      system: false,
+    },
   });
 
   console.log('Created Verification Docs');
@@ -300,8 +439,15 @@ async function main() {
       area: 250,
       furnishingType: 'furnished',
       rentTerms: {
+        minDuration: '6',
         minMonths: 6,
+        secureDeposit: 45000,
+        currency: 'ETB',
         petsAllowed: false,
+        conditions: {
+          en: '6 months minimum, first and last month upfront',
+          am: 'ቢያንስ 6 ወር፣ የመጀመሪያ እና የመጨረሻ ወር ቅድሚያ ክፍያ',
+        },
       },
     },
   });
@@ -325,6 +471,16 @@ async function main() {
       bathrooms: 1,
       area: 90,
       furnishingType: 'semi-furnished',
+      rentTerms: {
+        minDuration: '3',
+        minMonths: 3,
+        secureDeposit: 25000,
+        currency: 'ETB',
+        conditions: {
+          en: '3 months minimum, first month upfront',
+          am: 'ቢያንስ 3 ወር፣ የመጀመሪያ ወር ቅድሚያ',
+        },
+      },
     },
   });
 
@@ -346,6 +502,16 @@ async function main() {
       bedrooms: 1,
       bathrooms: 1,
       area: 50,
+      rentTerms: {
+        minDuration: '1',
+        minMonths: 1,
+        secureDeposit: 5000,
+        currency: 'ETB',
+        conditions: {
+          en: '1 month minimum',
+          am: 'ቢያንስ 1 ወር',
+        },
+      },
     },
   });
 
@@ -367,6 +533,16 @@ async function main() {
       bedrooms: 3,
       bathrooms: 2,
       area: 120,
+      rentTerms: {
+        minDuration: '12',
+        minMonths: 12,
+        secureDeposit: 15000,
+        currency: 'ETB',
+        conditions: {
+          en: '12 months minimum, negotiable for long-term leases',
+          am: 'ቢያንስ 12 ወር፣ ረጅም ጊዜ ኪራይ ከሆነ ይከናወናል',
+        },
+      },
     },
   });
 
@@ -388,6 +564,16 @@ async function main() {
       bedrooms: 1,
       bathrooms: 1,
       area: 45,
+      rentTerms: {
+        minDuration: '3',
+        minMonths: 3,
+        secureDeposit: 12000,
+        currency: 'ETB',
+        conditions: {
+          en: '3 months minimum, first month deposit',
+          am: 'ቢያንስ 3 ወር፣ የመጀመሪያ ወር ቅድሚያ',
+        },
+      },
     },
   });
 
@@ -473,13 +659,19 @@ async function main() {
   console.log('Created Messaging data');
 
   // 6) Appointments
+  const slotPending = appointmentSlot(2, 10, 30);
+  const slotConfirmed = appointmentSlot(3, 14, 45);
+  const slotCancelled = appointmentSlot(5, 9, 30);
+  const slotDeclined = appointmentSlot(1, 16, 60);
+  const slotPastConfirmed = appointmentSlot(-2, 11, 45);
+
   const appointment1 = await prisma.appointment.create({
     data: {
       propertyId: prop1.id,
       renterId: renter1.id,
       ownerId: owner1.id,
-      startsAt: daysFromNow(2),
-      endsAt: daysFromNow(2),
+      startsAt: slotPending.startsAt,
+      endsAt: slotPending.endsAt,
       status: AppointmentStatus.PENDING,
       note: 'Please confirm if parking is available.',
     },
@@ -490,9 +682,9 @@ async function main() {
       propertyId: prop2.id,
       renterId: renter2.id,
       ownerId: owner2.id,
-      startsAt: daysFromNow(3),
-      endsAt: daysFromNow(3),
-      status: AppointmentStatus.CONFIRMED,
+      startsAt: slotConfirmed.startsAt,
+      endsAt: slotConfirmed.endsAt,
+      status: AppointmentStatus.ACCEPTED,
       note: 'Will arrive with family member.',
     },
   });
@@ -502,10 +694,34 @@ async function main() {
       propertyId: prop5.id,
       renterId: renter3.id,
       ownerId: owner4.id,
-      startsAt: daysFromNow(5),
-      endsAt: daysFromNow(5),
-      status: AppointmentStatus.CANCELLED,
+      startsAt: slotCancelled.startsAt,
+      endsAt: slotCancelled.endsAt,
+      status: AppointmentStatus.REJECTED,
       note: 'Rescheduling due to work.',
+    },
+  });
+
+  const appointment4 = await prisma.appointment.create({
+    data: {
+      propertyId: prop1.id,
+      renterId: renter2.id,
+      ownerId: owner1.id,
+      startsAt: slotDeclined.startsAt,
+      endsAt: slotDeclined.endsAt,
+      status: AppointmentStatus.REJECTED,
+      note: 'Requested slot conflicts with owner travel plans.',
+    },
+  });
+
+  const appointment5 = await prisma.appointment.create({
+    data: {
+      propertyId: prop4.id,
+      renterId: renter1.id,
+      ownerId: owner1.id,
+      startsAt: slotPastConfirmed.startsAt,
+      endsAt: slotPastConfirmed.endsAt,
+      status: AppointmentStatus.ACCEPTED,
+      note: 'Visited and discussed lease terms.',
     },
   });
 
@@ -525,7 +741,7 @@ async function main() {
     },
   });
 
-  await prisma.agreement.create({
+  const ag2 = await prisma.agreement.create({
     data: {
       propertyId: prop2.id,
       renterId: renter2.id,
@@ -538,7 +754,7 @@ async function main() {
     },
   });
 
-  await prisma.agreement.create({
+  const ag3 = await prisma.agreement.create({
     data: {
       propertyId: prop4.id,
       renterId: renter1.id,
@@ -551,7 +767,107 @@ async function main() {
     },
   });
 
+  // additional sample agreements to populate owner dashboards
+  const ag4 = await prisma.agreement.create({
+    data: {
+      propertyId: prop5.id,
+      renterId: renter3.id,
+      ownerId: owner4.id,
+      monthlyRent: 12000,
+      startDate: new Date('2026-02-01'),
+      endDate: new Date('2027-02-01'),
+      status: AgreementStatus.pending_owner,
+      paymentStatus: PaymentStatus.pending,
+    },
+  });
+
+  const ag5 = await prisma.agreement.create({
+    data: {
+      propertyId: prop2.id,
+      renterId: renter2.id,
+      ownerId: owner2.id,
+      monthlyRent: 25000,
+      startDate: new Date('2026-06-01'),
+      endDate: new Date('2027-06-01'),
+      status: AgreementStatus.pending_renter,
+      paymentStatus: PaymentStatus.pending,
+    },
+  });
+
   console.log('Created Agreements');
+
+  // 7.5) Payments
+  // Create several payments with richer fields to match schema (stripeId, currency, proofUrl)
+  await prisma.payment.createMany({
+    data: [
+      // ag1: first month - confirmed via stripe
+      {
+        agreementId: ag1.id,
+        amount: 45000,
+        currency: 'ETB',
+        status: PaymentStatus.confirmed,
+        paidAt: new Date('2026-04-05'),
+        confirmedAt: new Date('2026-04-06'),
+        stripeId: crypto.randomUUID(),
+      },
+      // ag1: second month - proof uploaded but not yet confirmed
+      {
+        agreementId: ag1.id,
+        amount: 45000,
+        currency: 'ETB',
+        status: PaymentStatus.proof_uploaded,
+        paidAt: new Date('2026-05-05'),
+        proofUrl: 'https://example.com/proofs/may-payment.jpg',
+        stripeId: crypto.randomUUID(),
+      },
+      // ag1: third month - pending (no proof yet)
+      {
+        agreementId: ag1.id,
+        amount: 45000,
+        currency: 'ETB',
+        status: PaymentStatus.pending,
+        paidAt: new Date('2026-06-05'),
+      },
+      // ag2: initial pending payment
+      {
+        agreementId: ag2.id,
+        amount: 25000,
+        currency: 'ETB',
+        status: PaymentStatus.pending,
+        paidAt: new Date(),
+      },
+      // ag3: historical confirmed payment
+      {
+        agreementId: ag3.id,
+        amount: 15000,
+        currency: 'ETB',
+        status: PaymentStatus.confirmed,
+        paidAt: new Date('2025-12-05'),
+        confirmedAt: new Date('2025-12-06'),
+        stripeId: crypto.randomUUID(),
+      },
+      // ag4: proof uploaded awaiting confirmation
+      {
+        agreementId: ag4.id,
+        amount: 12000,
+        currency: 'ETB',
+        status: PaymentStatus.proof_uploaded,
+        paidAt: new Date('2026-02-02'),
+        proofUrl: 'https://example.com/proofs/ag4-feb-payment.jpg',
+        stripeId: crypto.randomUUID(),
+      },
+      // ag5: pending initial payment
+      {
+        agreementId: ag5.id,
+        amount: 25000,
+        currency: 'ETB',
+        status: PaymentStatus.pending,
+        paidAt: new Date(),
+      },
+    ],
+  });
+
+  console.log('Created Payments');
 
   // 8) Reports
   await prisma.report.createMany({
@@ -590,40 +906,35 @@ async function main() {
     data: [
       {
         reviewerId: renter1.id,
-        targetType: ReviewTargetType.property,
-        targetId: prop1.id,
+        propertyId: prop1.id,
         rating: 5,
         comment: 'Outstanding property! Exceeded all expectations.',
         status: ReviewStatus.published,
       },
       {
         reviewerId: renter2.id,
-        targetType: ReviewTargetType.property,
-        targetId: prop2.id,
+        propertyId: prop2.id,
         rating: 4,
         comment: 'Great location and reasonable price.',
         status: ReviewStatus.published,
       },
       {
-        reviewerId: renter1.id,
-        targetType: ReviewTargetType.owner,
-        targetId: owner1.id,
-        rating: 5,
-        comment: 'Michael is very professional and responds quickly.',
+        reviewerId: renter3.id,
+        propertyId: prop5.id,
+        rating: 4,
+        comment: 'Compact and practical for one person.',
         status: ReviewStatus.published,
       },
       {
-        reviewerId: renter2.id,
-        targetType: ReviewTargetType.owner,
-        targetId: owner3.id,
+        reviewerId: renter1.id,
+        propertyId: prop3.id,
         rating: 1,
-        comment: 'Terrible experience with this owner.',
+        comment: 'Listing information looked inaccurate during inspection.',
         status: ReviewStatus.flagged,
       },
       {
         reviewerId: admin.id,
-        targetType: ReviewTargetType.property,
-        targetId: prop3.id,
+        propertyId: prop4.id,
         rating: 1,
         comment: 'Spam-style review removed by moderation.',
         status: ReviewStatus.removed,
@@ -693,6 +1004,20 @@ async function main() {
         entityType: 'Appointment',
         entityId: appointment1.id,
         metadata: { propertyId: prop1.id },
+      },
+      {
+        actorId: owner1.id,
+        eventType: 'APPOINTMENT_STATUS_UPDATED',
+        entityType: 'Appointment',
+        entityId: appointment4.id,
+        metadata: { status: 'REJECTED' },
+      },
+      {
+        actorId: owner1.id,
+        eventType: 'APPOINTMENT_NOTE_UPDATED',
+        entityType: 'Appointment',
+        entityId: appointment5.id,
+        metadata: { note: 'Visited and discussed lease terms.' },
       },
       {
         actorId: renter2.id,

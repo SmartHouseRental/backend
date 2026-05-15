@@ -142,3 +142,19 @@ export async function deleteMessage(req: Request, res: Response) {
   const result = await messagingService.deleteMessage(messageId, userId);
   return res.status(200).json({ status: 'success', data: result });
 }
+
+export async function markRead(req: Request, res: Response) {
+  const userId = (req as AuthenticatedRequest).userId;
+  const conversationId = String(req.params.id);
+
+  const result = await messagingService.markConversationAsRead(conversationId, userId);
+  return res.status(200).json({ status: 'success', data: result });
+}
+
+export async function getMetadata(req: Request, res: Response) {
+  const userId = (req as AuthenticatedRequest).userId;
+  const conversationId = String(req.params.id);
+
+  const conversation = await messagingService.getConversationMetadata(conversationId, userId);
+  return res.status(200).json({ status: 'success', data: { conversation } });
+}

@@ -5,3 +5,4 @@ export interface AuthenticatedRequest extends Request {
   userRole: string;
 }
 
+export type UploadedFile = Express.Multer.File;

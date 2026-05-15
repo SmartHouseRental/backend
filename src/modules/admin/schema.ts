@@ -4,6 +4,11 @@ export const getAnalyticsQuerySchema = z.object({
   range: z.enum(['7d', '30d', '90d']).optional(),
 });
 
+export const getOverviewQuerySchema = z.object({
+  range: z.enum(['weekly', 'monthly']).default('monthly'),
+  timezone: z.string().trim().min(1).optional(),
+});
+
 export const paginationQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -67,7 +72,11 @@ export const adminUpdatePropertyBodySchema = z
 // Newly Added Schemas for Admin
 export const getUsersQuerySchema = paginationQuerySchema.extend({
   role: z.enum(['renter', 'owner', 'admin']).optional(),
-  status: z.enum(['active', 'suspended', 'banned']).optional(),
+  status: z.enum(['active', 'suspended', 'pending']).optional(),
+});
+
+export const getAdminPropertiesQuerySchema = paginationQuerySchema.extend({
+  status: z.enum(['AVAILABLE', 'PENDING', 'RENTED', 'UNAVAILABLE', 'MAINTENANCE']).optional(),
 });
 
 export const paramIdSchema = z.object({
@@ -75,11 +84,12 @@ export const paramIdSchema = z.object({
 });
 
 export const updateUserStatusSchema = z.object({
-  status: z.enum(['active', 'suspended', 'banned']),
+  status: z.enum(['active', 'suspended', 'pending']),
 });
 
 export const updateUserVerificationSchema = z.object({
-  verificationState: z.enum(['verified', 'pending_otp', 'pending_documents', 'rejected']),
+  verificationState: z.enum(['verified', 'pending', 'rejected', 'resubmit']),
+  comment: z.string().trim().min(1).max(1000).optional(),
 });
 
 export const createAgreementSchema = z.object({
@@ -89,7 +99,9 @@ export const createAgreementSchema = z.object({
   monthlyRent: z.number().positive(),
   startDate: z.string().datetime(),
   endDate: z.string().datetime(),
-  status: z.enum(['active', 'pending_renter', 'pending_owner', 'draft', 'terminated', 'expired']).default('draft'),
+  status: z
+    .enum(['active', 'pending_renter', 'pending_owner', 'draft', 'terminated', 'expired'])
+    .default('draft'),
 });
 
 export const updateAgreementStatusSchema = z.object({
@@ -101,7 +113,7 @@ export const updateReportStatusSchema = z.object({
 });
 
 export const resolveVerificationSchema = z.object({
-  status: z.enum(['approved', 'rejected']),
+  status: z.enum(['approved', 'rejected', 'resubmit', 'pending']),
 });
 
 export const broadcastNotificationSchema = z.object({
@@ -114,9 +126,22 @@ export const updateReviewStatusSchema = z.object({
   status: z.enum(['published', 'flagged', 'removed']),
 });
 
+export const approvePropertySchema = z.object({
+  note: z.string().trim().min(1).max(1000).optional(),
+});
+
+export const rejectPropertySchema = z.object({
+  reason: z.string().trim().min(1).max(100).default('REJECTED_BY_ADMIN'),
+  note: z.string().trim().min(1).max(1000).optional(),
+});
+
 export type GetAnalyticsQueryInput = z.infer<typeof getAnalyticsQuerySchema>;
+export type GetOverviewQueryInput = z.infer<typeof getOverviewQuerySchema>;
 export type GetPendingVerificationsQueryInput = z.infer<typeof getPendingVerificationsQuerySchema>;
 export type GetAuditLogsQueryInput = z.infer<typeof getAuditLogsQuerySchema>;
 export type AdminUpdatePropertyParamsInput = z.infer<typeof adminUpdatePropertyParamsSchema>;
 export type AdminUpdatePropertyBodyInput = z.infer<typeof adminUpdatePropertyBodySchema>;
 export type GetUsersQueryInput = z.infer<typeof getUsersQuerySchema>;
+export type GetAdminPropertiesQueryInput = z.infer<typeof getAdminPropertiesQuerySchema>;
+export type ApprovePropertyInput = z.infer<typeof approvePropertySchema>;
+export type RejectPropertyInput = z.infer<typeof rejectPropertySchema>;
