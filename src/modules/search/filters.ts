@@ -1,6 +1,9 @@
 import { sanitizeParsedFilters } from './queryParser';
 import { buildRentAmountEtbSql, type SupportedCurrency } from './currency';
 import { categoryLabelForPropertyType } from './propertyTypes';
+import { enforcePriceIntentFromQuery } from './intent';
+
+export type { SupportedCurrency };
 
 export type PropertyTypeFilter =
   | 'apartment'
@@ -27,6 +30,8 @@ export interface ParsedFilters {
   propertyType: PropertyTypeFilter | null;
   keywords: string[];
   confidence: number;
+  /** True when query uses explicit budget comparators (less/under/greater/between). */
+  hardPriceConstraint: boolean;
 }
 
 function hasValue<T>(v: T | null | undefined): v is T {
@@ -44,17 +49,46 @@ export function hasStructuredFilters(filters: ParsedFilters): boolean {
   );
 }
 
-/** Re-run sanitization after merge (price rules + confidence). */
+/** Re-run sanitization + lock explicit price intent from raw query. */
 export function finalizeParsedFilters(query: string, filters: ParsedFilters): ParsedFilters {
-  return sanitizeParsedFilters(filters, query, filters.currency);
+  const sanitized = sanitizeParsedFilters(filters, query, filters.currency);
+  return enforcePriceIntentFromQuery(query, {
+    ...sanitized,
+    hardPriceConstraint: filters.hardPriceConstraint ?? sanitized.hardPriceConstraint,
+  });
 }
 
-/** Filters used when strict SQL pre-filtering returns no rows. */
-export function relaxFilters(filters: ParsedFilters): ParsedFilters {
-  return {
-    ...filters,
-    location: null,
+export type SearchMatchMode = 'strict' | 'relaxed' | 'semantic';
+
+/**
+ * Progressive relaxations when strict filters return no rows.
+ * Price bounds are NEVER dropped — hard pre-vector constraint only.
+ */
+export function buildFilterRelaxationLadder(filters: ParsedFilters): ParsedFilters[] {
+  const ladder: ParsedFilters[] = [];
+  let current = { ...filters };
+
+  const pushIfChanged = (next: ParsedFilters) => {
+    if (JSON.stringify(next) !== JSON.stringify(current)) {
+      ladder.push(next);
+      current = next;
+    }
   };
+
+  if (current.propertyType) {
+    pushIfChanged({ ...current, propertyType: null });
+  }
+  if (current.amenities.length > 0) {
+    pushIfChanged({ ...current, amenities: [] });
+  }
+  if (current.location) {
+    pushIfChanged({ ...current, location: null });
+  }
+  if (current.bedrooms != null) {
+    pushIfChanged({ ...current, bedrooms: null });
+  }
+
+  return ladder;
 }
 
 function escapeLikePattern(value: string): string {
@@ -70,8 +104,8 @@ function sqlStringLiteral(value: string): string {
 }
 
 /**
- * Builds SQL AND clauses for hybrid search pre-filtering.
- * @param etbPerUsd - used to compare USD-listed rents in ETB
+ * Builds SQL AND clauses for hybrid search pre-filtering (runs BEFORE vector ranking).
+ * Price filters are mandatory when present — no post-vector override.
  */
 export function buildFilterSql(filters: ParsedFilters, etbPerUsd: number): string {
   let filterSql = '';
@@ -131,4 +165,9 @@ export function buildFilterSql(filters: ParsedFilters, etbPerUsd: number): strin
   }
 
   return filterSql;
+}
+
+export function describeFilterSql(filters: ParsedFilters, etbPerUsd: number): string {
+  const sql = buildFilterSql(filters, etbPerUsd);
+  return sql.trim() ? sql.trim() : '(no structured filters — vector only)';
 }

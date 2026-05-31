@@ -2,11 +2,18 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getCache, setCache } from '../../utils/cache';
 import { vectorSearch } from './repository';
 import {
+  buildFilterRelaxationLadder,
+  describeFilterSql,
   finalizeParsedFilters,
   hasStructuredFilters,
-  relaxFilters,
   type ParsedFilters,
+  type SearchMatchMode,
 } from './filters';
+import {
+  getTargetPriceEtb,
+  hasAnyPriceFilter,
+  hasExplicitPriceConstraint,
+} from './intent';
 import {
   buildQueryParserUserPrompt,
   QUERY_PARSER_SYSTEM_PROMPT,
@@ -20,6 +27,7 @@ import { getEtbPerUsd, normalizeDisplayCurrency, type SupportedCurrency } from '
 import { formatSearchProperty } from './formatSearchProperty';
 
 const EMBEDDING_DIMENSION = 384;
+const SEARCH_CACHE_VERSION = 'v2';
 
 let genAI: GoogleGenerativeAI | null = null;
 function getGeminiClient(apiKey: string): GoogleGenerativeAI {
@@ -47,6 +55,7 @@ function emptyFilters(keywords: string[], confidence: number, currency: Supporte
     propertyType: null,
     keywords,
     confidence,
+    hardPriceConstraint: false,
   };
 }
 
@@ -135,7 +144,7 @@ export async function searchProperties(
   displayCurrency: SupportedCurrency = 'ETB',
 ) {
   const currency = normalizeDisplayCurrency(displayCurrency);
-  const cacheKey = `search:${query.trim().toLowerCase()}:${currency}:${page}:${limit}`;
+  const cacheKey = `search:${SEARCH_CACHE_VERSION}:${query.trim().toLowerCase()}:${currency}:${page}:${limit}`;
 
   const cached = await getCache(cacheKey);
   if (cached) {
@@ -146,31 +155,73 @@ export async function searchProperties(
   const etbPerUsd = await getEtbPerUsd();
   const parsed = await parseQuery(query, currency);
   const filters = finalizeParsedFilters(query, { ...parsed, currency });
+  const targetPriceEtb = getTargetPriceEtb(filters, etbPerUsd);
+  const priceLocked = hasAnyPriceFilter(filters) || filters.hardPriceConstraint;
+
+  console.log('PARSED FILTERS:', JSON.stringify(filters, null, 2));
+  console.log('APPLIED FILTERS (initial):', JSON.stringify(filters, null, 2));
+  console.log('SQL WHERE (initial):', describeFilterSql(filters, etbPerUsd));
+  console.log('SEARCH INTENT:', {
+    hardPriceConstraint: filters.hardPriceConstraint,
+    explicitPrice: hasExplicitPriceConstraint(query),
+    priceLocked,
+    targetPriceEtb,
+  });
 
   const embedding = await createEmbedding(query);
 
   const skip = (page - 1) * limit;
-  let { results, total } = await vectorSearch(embedding, filters, skip, limit, etbPerUsd);
+  const searchOptions = { targetPriceEtb, logLabel: 'search' };
+
+  let { results, total } = await vectorSearch(
+    embedding,
+    filters,
+    skip,
+    limit,
+    etbPerUsd,
+    searchOptions,
+  );
   let appliedFilters = filters;
+  let matchMode: SearchMatchMode = 'strict';
 
   if (total === 0 && hasStructuredFilters(filters)) {
-    const relaxed = relaxFilters(filters);
-    const relaxedResult = await vectorSearch(embedding, relaxed, skip, limit, etbPerUsd);
-    if (relaxedResult.total > 0) {
-      ({ results, total } = relaxedResult);
-      appliedFilters = relaxed;
-    } else {
-      const vectorOnly = await vectorSearch(
+    for (const relaxed of buildFilterRelaxationLadder(filters)) {
+      console.log('APPLIED FILTERS (relaxed attempt):', JSON.stringify(relaxed, null, 2));
+      console.log('SQL WHERE (relaxed attempt):', describeFilterSql(relaxed, etbPerUsd));
+
+      const relaxedResult = await vectorSearch(
         embedding,
-        emptyFilters(filters.keywords, filters.confidence, currency),
+        relaxed,
         skip,
         limit,
         etbPerUsd,
+        { ...searchOptions, logLabel: 'search-relaxed' },
       );
-      if (vectorOnly.total > 0) {
-        ({ results, total } = vectorOnly);
-        appliedFilters = emptyFilters(filters.keywords, filters.confidence, currency);
+      if (relaxedResult.total > 0) {
+        ({ results, total } = relaxedResult);
+        appliedFilters = relaxed;
+        matchMode = 'relaxed';
+        break;
       }
+    }
+  }
+
+  if (total === 0 && !priceLocked) {
+    const vectorOnly = emptyFilters(filters.keywords, filters.confidence, currency);
+    console.log('APPLIED FILTERS (semantic fallback):', JSON.stringify(vectorOnly, null, 2));
+
+    const vectorOnlyResult = await vectorSearch(
+      embedding,
+      vectorOnly,
+      skip,
+      limit,
+      etbPerUsd,
+      { targetPriceEtb: null, logLabel: 'search-semantic' },
+    );
+    if (vectorOnlyResult.total > 0) {
+      ({ results, total } = vectorOnlyResult);
+      appliedFilters = vectorOnly;
+      matchMode = 'semantic';
     }
   }
 
@@ -188,7 +239,9 @@ export async function searchProperties(
     };
     return {
       ...formatSearchProperty(property, etbPerUsd, currency),
-      similarity: Number(row.similarity?.toFixed(4) ?? 0),
+      similarity: Number(row.final_score?.toFixed(4) ?? row.similarity?.toFixed(4) ?? 0),
+      cosineSimilarity: Number(row.cosine_similarity?.toFixed(4) ?? 0),
+      priceRelevance: Number(row.price_relevance?.toFixed(4) ?? 0),
     };
   });
 
@@ -200,6 +253,10 @@ export async function searchProperties(
       limit,
       totalPages: Math.ceil(total / limit),
       filters: appliedFilters,
+      parsedFilters: filters,
+      matchMode,
+      targetPriceEtb,
+      hardPriceConstraint: filters.hardPriceConstraint,
       fxRate: {
         etbPerUsd,
         base: 'ETB',

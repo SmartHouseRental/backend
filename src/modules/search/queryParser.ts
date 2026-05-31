@@ -2,6 +2,7 @@ import type { ParsedFilters, PropertyTypeFilter } from './filters';
 import type { SupportedCurrency } from './currency';
 import { PROPERTY_TYPE_PARSE_ORDER } from './propertyTypes';
 import { detectPriceCurrency, extractPriceBounds } from './pricePhrases';
+import { detectHardPriceConstraint, enforcePriceIntentFromQuery } from './intent';
 
 export const ALLOWED_AMENITIES = [
   'gym',
@@ -28,7 +29,7 @@ const KEYWORD_VOCAB = [
 const BEDROOM_PATTERN = /\b(\d+)\s*(?:bed(?:room)?s?|br)\b/i;
 /** Colloquial housing request — not property category "House" */
 const GENERIC_HOUSE_PHRASE =
-  /\b(?:need|want|looking for|searching for|find|get)\s+(?:a\s+)?(?:the\s+)?house\b/i;
+  /\b(?:need|want|looking for|searching for|find|get)\s+(?:(?:a|the|cheap|affordable|nice|good|decent|small|big)\s+){0,4}house\b/i;
 const NEAR_LOCATION_PATTERN = /\b(?:near|in|around|at)\s+([a-z][a-z\s-]{1,40})/i;
 
 const KNOWN_LOCATIONS = [
@@ -206,6 +207,7 @@ export function sanitizeParsedFilters(
       typeof raw.confidence === 'number' && raw.confidence >= 0 && raw.confidence <= 1
         ? Math.round(raw.confidence * 100) / 100
         : 0,
+    hardPriceConstraint: raw.hardPriceConstraint ?? false,
   };
 
   if (Number.isNaN(filters.bedrooms as number)) filters.bedrooms = null;
@@ -231,7 +233,7 @@ export function sanitizeParsedFilters(
     filters.confidence = computeConfidence(filters, query);
   }
 
-  return filters;
+  return enforcePriceIntentFromQuery(query, filters);
 }
 
 export function parseQueryLocally(
@@ -252,6 +254,7 @@ export function parseQueryLocally(
     propertyType: null,
     keywords: [],
     confidence: 0,
+    hardPriceConstraint: detectHardPriceConstraint(q),
   };
 
   const bedroomMatch = q.match(BEDROOM_PATTERN);
@@ -303,7 +306,7 @@ export function parseQueryLocally(
   applyPriceRulesFromText(q, filters);
   filters.confidence = computeConfidence(filters, q);
 
-  return filters;
+  return enforcePriceIntentFromQuery(q, filters);
 }
 
 export function mergeParsedFilters(
@@ -312,7 +315,7 @@ export function mergeParsedFilters(
   query: string,
   displayCurrency: SupportedCurrency = 'ETB',
 ): ParsedFilters {
-  return sanitizeParsedFilters(
+  const merged = sanitizeParsedFilters(
     {
       location: primary.location?.trim() || fallback.location || null,
       bedrooms: primary.bedrooms ?? fallback.bedrooms ?? null,
@@ -324,8 +327,12 @@ export function mergeParsedFilters(
       propertyType: primary.propertyType ?? fallback.propertyType ?? null,
       keywords: primary.keywords.length > 0 ? primary.keywords : fallback.keywords,
       confidence: primary.confidence > 0 ? primary.confidence : fallback.confidence,
+      hardPriceConstraint: primary.hardPriceConstraint || fallback.hardPriceConstraint,
     },
     query,
     displayCurrency,
   );
+
+  merged.confidence = computeConfidence(merged, query);
+  return enforcePriceIntentFromQuery(query, merged);
 }

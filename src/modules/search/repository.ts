@@ -1,20 +1,25 @@
 import prisma from '../../config/database';
-import { buildFilterSql, type ParsedFilters } from './filters';
+import { buildFilterSql, describeFilterSql, type ParsedFilters } from './filters';
+import { getPropertyTextRepresentation } from './propertyEmbeddingText';
 
-// BAAI/bge-small-en-v1.5 has a dimension of 384
+export { getPropertyTextRepresentation };
+
 const EMBEDDING_DIMENSION = 384;
+const COSINE_WEIGHT = 0.6;
+const PRICE_WEIGHT = 0.4;
+
+export interface VectorSearchOptions {
+  targetPriceEtb?: number | null;
+  logLabel?: string;
+}
 
 /**
  * Initializes pgvector and creates the HNSW expression index.
- * Fallback to IVFFlat if HNSW is not supported by the PG engine.
  */
 export async function initVectorSearch() {
   try {
-    // 1. Enable pgvector extension
     await prisma.$executeRawUnsafe('CREATE EXTENSION IF NOT EXISTS vector;');
 
-    // 2. Create expression index for efficient cosine similarity calculations
-    // We cast the double precision[] column to vector(384) inside the index definition
     await prisma.$executeRawUnsafe(`
       CREATE INDEX IF NOT EXISTS property_embedding_vector_idx
       ON "PropertyEmbedding"
@@ -35,7 +40,8 @@ export async function initVectorSearch() {
 }
 
 /**
- * Executes a semantic vector search combined with structured SQL filters.
+ * Hybrid search: hard SQL pre-filters, then ranked by
+ * final_score = 0.6 * cosine_similarity + 0.4 * price_relevance_score
  */
 export async function vectorSearch(
   embedding: number[],
@@ -43,24 +49,51 @@ export async function vectorSearch(
   skip: number,
   limit: number,
   etbPerUsd: number,
+  options: VectorSearchOptions = {},
 ) {
+  const { targetPriceEtb = null, logLabel = 'search' } = options;
   const embeddingString = `[${embedding.join(',')}]`;
   const filterSql = buildFilterSql(filters, etbPerUsd);
+  const rentEtb = `(COALESCE(
+    NULLIF((p.price->>'amountEtb')::numeric, 0),
+    CASE
+      WHEN UPPER(COALESCE(p.price->>'currency', 'ETB')) = 'USD'
+      THEN (p.price->>'value')::numeric * ${Number(etbPerUsd)}
+      ELSE (p.price->>'value')::numeric
+    END
+  ))`;
 
-  // Execute raw query using pgvector operators
-  // <=> computes cosine distance, similarity is 1 - distance
+  const cosineExpr = `1 - (pe.embedding::vector(${EMBEDDING_DIMENSION}) <=> '${embeddingString}'::vector(${EMBEDDING_DIMENSION}))`;
+
+  const priceRelevanceExpr =
+    targetPriceEtb != null && targetPriceEtb > 0
+      ? `GREATEST(0, 1 - (ABS((${rentEtb}) - ${targetPriceEtb}) / ${targetPriceEtb}))`
+      : '0';
+
+  const finalScoreExpr =
+    targetPriceEtb != null && targetPriceEtb > 0
+      ? `(${COSINE_WEIGHT} * (${cosineExpr}) + ${PRICE_WEIGHT} * (${priceRelevanceExpr}))`
+      : cosineExpr;
+
+  console.log(`[${logLabel}] SQL WHERE:`, describeFilterSql(filters, etbPerUsd));
+  if (targetPriceEtb != null) {
+    console.log(`[${logLabel}] targetPriceEtb:`, targetPriceEtb, `(ranking: ${COSINE_WEIGHT} cosine + ${PRICE_WEIGHT} price)`);
+  }
+
   const query = `
-    SELECT p.*, 
+    SELECT p.*,
            u.id AS "owner_id",
            u.first_name AS "owner_first_name",
            u.last_name AS "owner_last_name",
            u.email AS "owner_email",
-           1 - (pe.embedding::vector(${EMBEDDING_DIMENSION}) <=> '${embeddingString}'::vector(${EMBEDDING_DIMENSION})) AS similarity
+           (${cosineExpr}) AS cosine_similarity,
+           (${priceRelevanceExpr}) AS price_relevance,
+           (${finalScoreExpr}) AS final_score
     FROM "Property" p
     JOIN "PropertyEmbedding" pe ON p.id = pe."propertyId"
     LEFT JOIN "User" u ON p."ownerId" = u.id
     WHERE p."isDeleted" = false AND p.status = 'AVAILABLE' ${filterSql}
-    ORDER BY pe.embedding::vector(${EMBEDDING_DIMENSION}) <=> '${embeddingString}'::vector(${EMBEDDING_DIMENSION})
+    ORDER BY final_score DESC
     OFFSET ${skip} LIMIT ${limit};
   `;
 
@@ -78,32 +111,9 @@ export async function vectorSearch(
 
   const total = countResults[0]?.total ?? 0;
 
-  return { results, total };
+  return { results, total, filterSql };
 }
 
-/**
- * Builds the text representation of a property to create its vector embedding.
- */
-function getPropertyTextRepresentation(property: any): string {
-  const title = typeof property.title === 'string' ? property.title : (property.title as { en?: string })?.en || '';
-  const description = typeof property.description === 'string' ? property.description : (property.description as { en?: string })?.en || '';
-  const category = typeof property.category === 'string' ? property.category : (property.category as { en?: string })?.en || '';
-  const address = typeof property.address === 'string' ? property.address : (property.address as { en?: string })?.en || '';
-  
-  let amenitiesStr = '';
-  if (Array.isArray(property.amenities)) {
-    amenitiesStr = property.amenities
-      .map((a: any) => typeof a === 'string' ? a : (a.en || ''))
-      .filter(Boolean)
-      .join(', ');
-  }
-
-  return `Title: ${title}. Category: ${category}. Address: ${address}. Amenities: ${amenitiesStr}. Description: ${description}`;
-}
-
-/**
- * Calls the local embedding service python container to create the 1024-dim BGE vector.
- */
 async function createEmbedding(text: string): Promise<number[]> {
   const url = process.env.EMBEDDING_URL || 'http://localhost:8000';
   try {
@@ -131,9 +141,6 @@ async function createEmbedding(text: string): Promise<number[]> {
   }
 }
 
-/**
- * Syncs a single property's vector embedding.
- */
 export async function syncPropertyEmbedding(propertyId: string) {
   try {
     const property = await prisma.property.findFirst({
@@ -142,7 +149,7 @@ export async function syncPropertyEmbedding(propertyId: string) {
 
     if (!property) return;
 
-    const text = getPropertyTextRepresentation(property);
+    const text = getPropertyTextRepresentation(property as Record<string, unknown>);
     const vector = await createEmbedding(text);
 
     await prisma.propertyEmbedding.upsert({
@@ -157,9 +164,6 @@ export async function syncPropertyEmbedding(propertyId: string) {
   }
 }
 
-/**
- * Syncs embeddings for all properties currently missing them.
- */
 export async function syncAllPropertyEmbeddings() {
   try {
     const properties = await prisma.property.findMany({
@@ -189,9 +193,6 @@ export interface EmbeddingResyncResult {
   errors: { propertyId: string; error: string }[];
 }
 
-/**
- * Regenerates embeddings for every active property (admin resync).
- */
 export async function resyncAllPropertyEmbeddings(): Promise<EmbeddingResyncResult> {
   const properties = await prisma.property.findMany({
     where: { isDeleted: false },
@@ -215,7 +216,7 @@ export async function resyncAllPropertyEmbeddings(): Promise<EmbeddingResyncResu
         throw new Error('Property not found');
       }
 
-      const text = getPropertyTextRepresentation(property);
+      const text = getPropertyTextRepresentation(property as Record<string, unknown>);
       const vector = await createEmbedding(text);
 
       await prisma.propertyEmbedding.upsert({
