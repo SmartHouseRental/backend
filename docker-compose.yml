@@ -84,7 +84,7 @@ services:
       dockerfile: Dockerfile
     container_name: smart-rental-bge
     ports:
-      - '${EMBEDDING_PORT:-8000}:8000'
+      - '${EMBEDDING_PORT:-3002}:3002'
     restart: unless-stopped
 
   recommendation-db:
@@ -110,7 +110,7 @@ services:
       dockerfile: Dockerfile
     container_name: smart-rental-recommendations
     ports:
-      - '8001:8001'
+      - '${RECOMMENDATION_PORT:-3001}:3001'
     environment:
       MAIN_DB_URL: postgresql://postgres:postgres@postgres:5432/${POSTGRES_DB:-house_rental}
       RECOMMENDATION_DB_URL: postgresql://postgres:postgres@recommendation-db:5432/recommendations

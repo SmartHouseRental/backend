@@ -10,7 +10,7 @@
     "prisma:generate": "npx prisma generate",
     "prisma:migrate": "npx prisma migrate dev",
     "prisma:deploy": "npx prisma migrate deploy",
-    "prisma:seed": "npx tsc prisma/seed.ts prisma/seedRenters.ts --module commonjs --target es2020 --esModuleInterop --moduleResolution node --outDir prisma/dist && node prisma/dist/seed.js",
+    "prisma:seed": "npx tsc prisma/seed.ts prisma/seedRenters.ts prisma/seedLocations.ts --module commonjs --target es2020 --esModuleInterop --moduleResolution node --outDir prisma/dist && node prisma/dist/seed.js",
     "postinstall": "prisma generate"
   },
   "keywords": [],

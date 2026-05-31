@@ -68,10 +68,10 @@ export function parseMapAddress(fullAddress: string, lat: number, lng: number): 
 }
 
 /**
- * Loads and parses all map locations from `location.md`.
+ * Loads and parses all map locations from `backend/docs/location.md`.
  */
 export function loadSeedMapLocations(): SeedMapLocation[] {
-  const filePath = path.join(__dirname, '..', 'location.md');
+  const filePath = path.join(__dirname, '..', '..', 'docs', 'location.md');
   const text = fs.readFileSync(filePath, 'utf8');
   const pattern = /^(.+)\nCoordinates:\s*([-\d.]+),\s*([-\d.]+)/gm;
   const locations: SeedMapLocation[] = [];

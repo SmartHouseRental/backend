@@ -17,6 +17,6 @@ RUN python -c "from fastembed import TextEmbedding; TextEmbedding(model_name='BA
 
 COPY . .
 
-EXPOSE 8000
+EXPOSE 8002
 
 CMD ["python", "app.py"]
