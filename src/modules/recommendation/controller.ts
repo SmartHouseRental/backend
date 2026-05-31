@@ -57,7 +57,11 @@ class RecommendationController {
   getRecommendations: RequestHandler = async (req, res) => {
     const { userId } = req as AuthenticatedRequest;
     const result = await service.getRecommendations(userId);
-    res.json(result);
+    res.json({
+      status: 'success',
+      message: 'Recommended properties fetched successfully',
+      data: result,
+    });
   };
 
   getSimilarProperties: RequestHandler<{ id: string }> = async (req, res) => {

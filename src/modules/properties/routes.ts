@@ -27,6 +27,7 @@ import {
   deletePropertyTranslationController,
   getOwnerPropertyAnalyticsController,
 } from './controller';
+import recommendationController from '../recommendation/controller';
 /**
  * @openapi
  * tags:
@@ -255,6 +256,20 @@ router.get('/saved', requireAuth, getSavedPropertiesController);
  *                       type: integer
  */
 router.get('/nearby', validate(getNearbyPropertiesSchema, 'query'), getNearbyPropertiesController);
+
+/**
+ * @openapi
+ * /api/v1/properties/recommendations:
+ *   get:
+ *     summary: Get recommended properties for logged-in user
+ *     tags: [Property]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Recommended properties fetched successfully
+ */
+router.get('/recommendations', requireAuth, recommendationController.getRecommendations);
 
 /**
  * @openapi

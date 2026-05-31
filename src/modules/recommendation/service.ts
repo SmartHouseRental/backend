@@ -258,7 +258,12 @@ class RecommendationService {
         }
       }
     } catch (e) {
-      console.error("Microservice unavailable or empty:", e);
+      console.error('Microservice unavailable or empty:', e);
+    }
+
+    const collaborative = await this.getCollaborativeRecommendations(userId);
+    if (collaborative.length > 0) {
+      return collaborative;
     }
 
     return [];
