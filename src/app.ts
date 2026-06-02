@@ -9,7 +9,6 @@ import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
 import { env } from './config/env';
 import { errorHandler } from './middlewares/error.middleware';
-import { rateLimiter } from './middlewares/rateLimiter';
 import { requireAuth, restrictTo } from './middlewares/auth.middleware';
 import { resyncEmbeddingsController } from './modules/admin/embeddings.controller';
 
@@ -66,7 +65,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 app.use(cookieParser());
 app.use(morgan('dev'));
-app.use(rateLimiter);
 app.set('trust proxy', true);
 // Swagger Documentation
 app.get('/swagger.json', (req, res) => {
